@@ -13,7 +13,7 @@
   var GAME_X = 0, GAME_Y = 0;
 
   /* Bump alongside CACHE_NAME in sw.js and tag the matching git release. */
-  Game.VERSION = 'v1.0.0';
+  Game.VERSION = 'v1.1.0';
 
   var canvas, ctx;
 
@@ -146,9 +146,29 @@
     mergeInto(Game.flags, readJSON('flags'));
     if (!Array.isArray(Game.flags.songsDone)) Game.flags.songsDone = [];
 
+    applyStarterFurniture();
+
     mergeInto(Game.settings, readJSON('settings'));
     Game.i18n.setLang(Game.settings.lang || 'en');
     if (Game.settings.muted) Game.audio.setMuted(true);
+  }
+
+  /* Give each room the furniture it should never be without -- a bed in the
+     bedroom, a table and fridge in the kitchen, a disco ball in the music
+     room. Runs once per save, and only for rooms that are still empty, so
+     it can't overwrite anything the player has arranged. Existing saves get
+     it on their next load. */
+  function applyStarterFurniture() {
+    if (Game.flags.starterFurniture) return;
+    var starters = Game.STARTER_FURNITURE || {};
+    for (var roomId in starters) {
+      if (!Object.prototype.hasOwnProperty.call(starters, roomId)) continue;
+      if (!Game.rooms[roomId] || Game.rooms[roomId].length > 0) continue;
+      for (var i = 0; i < starters[roomId].length; i++) {
+        Game.rooms[roomId].push(clone(starters[roomId][i]));
+      }
+    }
+    Game.flags.starterFurniture = true;
   }
 
   function resetSave() {
@@ -404,13 +424,9 @@
         break;
 
       case State.HOUSE_INTERIOR:
-        if (Game.ui.updateHouseInterior(keys, jp) === 'exit') {
-          state = State.PLAYING;
-          Game.audio.startMusic('meadow');
-          save();
-        } else {
-          updateAmbientPianist();
-        }
+        var act = Game.ui.updateHouseInterior(keys, jp);
+        if (act) applyInteriorAction(act);
+        else updateAmbientPianist();
         break;
 
       case State.PIANO:
@@ -448,6 +464,33 @@
         return;
       }
     }
+  }
+
+  /* Shared by the interior's keyboard/D-pad path and its tap path so the
+     two can't drift. */
+  function applyInteriorAction(act) {
+    if (act === 'exit') {
+      Game.audio.play('select');
+      state = State.PLAYING;
+      Game.audio.startMusic('meadow');
+      save();
+      if (checkVictory()) {
+        Game.flags.partySeen = true;
+        Game.audio.play('victory');
+        state = State.VICTORY;
+        save();
+      }
+      return;
+    }
+    if (act === 'piano') { enterPiano(); return; }
+    if (act.indexOf('design:') === 0) {
+      Game.designTarget = act.slice(7);
+      customizeReturn = State.HOUSE_INTERIOR;
+      Game.audio.play('select');
+      state = State.CUSTOMIZE;
+      return;
+    }
+    if (act === 'select') Game.audio.play('select');
   }
 
   function friendDef(id) {
@@ -506,9 +549,11 @@
     ctx.restore();
   }
 
-  /* Touch buttons only make sense where the D-pad drives something. */
+  /* Touch buttons only make sense where the D-pad drives something.
+     Momoko walks around indoors too, so the house counts. */
   function showTouchButtons() {
-    return state === State.PLAYING || state === State.PAUSED || state === State.BUILD_CUTSCENE;
+    return state === State.PLAYING || state === State.PAUSED ||
+           state === State.BUILD_CUTSCENE || state === State.HOUSE_INTERIOR;
   }
 
   function drawWorld(c) {
@@ -681,24 +726,7 @@
 
       case State.HOUSE_INTERIOR:
         action = Game.ui.handleHouseInteriorClick(mx, my);
-        if (action === 'exit') {
-          Game.audio.play('select');
-          state = State.PLAYING;
-          Game.audio.startMusic('meadow');
-          save();
-          if (checkVictory()) {
-            Game.flags.partySeen = true;
-            Game.audio.play('victory');
-            state = State.VICTORY;
-            save();
-          }
-        } else if (action === 'piano') {
-          enterPiano();
-        } else if (action && action.indexOf('design:') === 0) {
-          Game.designTarget = action.slice(7);
-          customizeReturn = State.HOUSE_INTERIOR;
-          state = State.CUSTOMIZE;
-        } else if (action === 'select') Game.audio.play('select');
+        if (action) applyInteriorAction(action);
         break;
 
       case State.VICTORY:

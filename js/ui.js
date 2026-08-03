@@ -617,7 +617,8 @@
     furCols: 8, furCellW: 94, furCellH: 70, furY: 118,
     bagPanel: { x: 12, y: 352, w: 452, h: 114 },
     listPanel: { x: 476, y: 352, w: 312, h: 114 },
-    slot: { x: 26, y: 392, size: 58, gap: 8 },
+    slot: { x: 20, y: 384, size: 54, gap: 8 },
+    emptyBtn: { x: 334, y: 384, w: 118, h: 54 },
     fillBtn: { x: 496, y: 424, w: 132, h: 32 },
     exit: { x: 646, y: 12, w: 140, h: 38 },
   };
@@ -801,8 +802,12 @@
       c.fillStyle = 'rgba(74,51,32,0.6)';
       c.font = '11px monospace';
       c.textAlign = 'left';
-      c.fillText(T('shopCartEmpty'), p.x + 14 + 5 * (SHOP.slot.size + SHOP.slot.gap) - 10, p.y + 20);
+      c.fillText(T('shopCartEmpty'), p.x + 132, p.y + 20);
     }
+
+    button(c, SHOP.emptyBtn, T('shopEmptyBag'),
+      { font: 12, fill: Game.bag.items.length ? '#e88a7a' : 'rgba(255,244,220,0.45)',
+        disabled: Game.bag.items.length === 0 });
   }
 
   function drawBagItemIcon(c, item, cx, cy, size) {
@@ -861,6 +866,15 @@
     }
 
     if (hit(SHOP.fillBtn, mx, my)) { fillBag(); return null; }
+    if (hit(SHOP.emptyBtn, mx, my)) {
+      if (Game.bag.items.length === 0) { Game.audio.play('deny'); return null; }
+      /* Everything in the shop is free, so emptying the bag just puts it
+         back on the shelf -- nothing to refund. */
+      Game.bag.items = [];
+      showToast(T('shopBagEmptied'));
+      Game.audio.play('drop');
+      return null;
+    }
 
     var cur = null;
     for (i = 0; i < tabs.length; i++) if (tabs[i].id === shopTab) cur = tabs[i];
@@ -1344,21 +1358,36 @@
 
   /* ================================================================
      House interior
+
+     Laid out like the house-decorating screen in momoko-in-space: the
+     palette strip lives across the top (title, Clear All, category tabs,
+     item tiles), and the room below is a walk-around floor. Momoko walks
+     it in 2D and everything -- furniture, Momoko, the friend who lives
+     here -- is depth-sorted by y so she can stand behind or in front of
+     the furniture.
      ================================================================ */
 
   var ROOM = {
-    tabY: 6, tabH: 34, tabW: 132, tabGap: 6, tabX: 14,
-    top: 48, floorY: 342, bottom: 366,
-    placeMinX: 46, placeMaxX: 754, placeMinY: 250, placeMaxY: 352,
-    palette: { x: 10, y: 370, w: 616, h: 100 },
-    catX: 20, catY: 378, catW: 96, catH: 26, catGap: 4,
-    itemX: 20, itemY: 412, itemSize: 52, itemGap: 6,
-    exit: { x: 638, y: 372, w: 152, h: 42 },
-    clear: { x: 638, y: 422, w: 152, h: 40 },
+    /* top bar */
+    tabX: 12, tabY: 6, tabW: 118, tabH: 32, tabGap: 6,
+    exit: { x: 648, y: 6, w: 138, h: 32 },
+    /* palette strip */
+    stripY: 44, stripH: 154,
+    clear: { x: 690, y: 50, w: 96, h: 26 },
+    catX: 12, catY: 78, catW: 96, catH: 26, catGap: 2,
+    itemX: 20, itemY: 110, itemW: 68, itemH: 78, itemGap: 10,
+    /* the room */
+    wallTop: 198, floorY: 252,
+    /* `top` is far enough down the floor that even the tallest piece (the
+       piano, ~104px) clears the palette strip above. */
+    floor: { left: 34, right: 700, top: 300, bottom: 452 },
+    door: { x: 744, y: 372 },
   };
   var roomCat = 'sleep';
-  var selectedPiece = null;   /* index into the room's unplaced inventory */
-  var paletteScroll = 0;
+  var selectedPiece = null;
+  /* Each room remembers where Momoko was standing. */
+  var roomPos = {};
+  var roomPlayer = null;
 
   function roomTabRect(i) {
     return { x: ROOM.tabX + i * (ROOM.tabW + ROOM.tabGap), y: ROOM.tabY, w: ROOM.tabW, h: ROOM.tabH };
@@ -1367,7 +1396,7 @@
     return { x: ROOM.catX + i * (ROOM.catW + ROOM.catGap), y: ROOM.catY, w: ROOM.catW, h: ROOM.catH };
   }
   function paletteItemRect(i) {
-    return { x: ROOM.itemX + i * (ROOM.itemSize + ROOM.itemGap), y: ROOM.itemY, w: ROOM.itemSize, h: ROOM.itemSize };
+    return { x: ROOM.itemX + i * (ROOM.itemW + ROOM.itemGap), y: ROOM.itemY, w: ROOM.itemW, h: ROOM.itemH };
   }
 
   function roomDef(id) {
@@ -1375,110 +1404,38 @@
     return Game.ROOMS[0];
   }
 
-  /* Unplaced furniture, grouped by category. One shared pile across all
-     rooms so a piece bought while standing in the kitchen can still go in
-     the bedroom. */
+  /* Every furniture type in the current category, owned or not. Showing the
+     whole catalogue (dimmed when you don't own a piece yet) is what makes it
+     obvious that furniture comes from the shop. */
   function paletteItems() {
     var store = Game.furnitureStock;
     var out = [];
     for (var i = 0; i < Game.FURNITURE_TYPES.length; i++) {
       var ft = Game.FURNITURE_TYPES[i];
       if (ft.cat !== roomCat) continue;
-      var n = store[ft.type] || 0;
-      if (n > 0) out.push({ type: ft.type, count: n });
+      out.push({ type: ft.type, count: store[ft.type] || 0 });
     }
-    if (roomCat === 'fun' && (store.piano || 0) > 0) out.push({ type: 'piano', count: store.piano });
+    if (roomCat === 'fun' && (store.piano || 0) > 0) {
+      out.push({ type: 'piano', count: store.piano });
+    }
     return out;
   }
 
-  function drawHouseInterior(c) {
-    t++;
-    var rd = roomDef(Game.currentRoom);
-    var items = Game.rooms[Game.currentRoom] || [];
-
-    /* Walls */
-    var g = c.createLinearGradient(0, ROOM.top, 0, ROOM.floorY);
-    g.addColorStop(0, rd.wallA);
-    g.addColorStop(1, rd.wallB);
-    c.fillStyle = g;
-    c.fillRect(0, ROOM.top, W, ROOM.floorY - ROOM.top);
-
-    /* Wall planks */
-    c.save();
-    c.globalAlpha = 0.13;
-    c.strokeStyle = PAL.ink;
-    c.lineWidth = 2;
-    for (var wy = ROOM.top + 22; wy < ROOM.floorY; wy += 24) {
-      c.beginPath(); c.moveTo(0, wy); c.lineTo(W, wy); c.stroke();
-    }
-    c.restore();
-
-    /* Window looking out into the canopy */
-    drawInteriorWindow(c, 118, 118, rd);
-    drawInteriorWindow(c, 664, 118, rd);
-
-    /* Floor */
-    c.fillStyle = rd.floor;
-    c.fillRect(0, ROOM.floorY, W, H - ROOM.floorY);
-    c.strokeStyle = E.shade(rd.floor, -22);
-    c.lineWidth = 2;
-    for (var fx = 0; fx < W; fx += 58) {
-      c.beginPath(); c.moveTo(fx, ROOM.floorY); c.lineTo(fx - 14, H); c.stroke();
-    }
-    c.fillStyle = E.shade(rd.floor, -30);
-    c.fillRect(0, ROOM.floorY, W, 4);
-
-    /* Skirting */
-    c.fillStyle = PAL.bark;
-    c.fillRect(0, ROOM.floorY - 12, W, 12);
-
-    /* Placed furniture, painted back-to-front by y */
-    var sorted = items.slice().sort(function (a, b) { return a.y - b.y; });
-    for (var i = 0; i < sorted.length; i++) {
-      drawFurniture(c, sorted[i].type, sorted[i].x, sorted[i].y, 'placed', sorted[i].flip);
-    }
-
-    /* Resident friend */
-    var resident = residentOf(Game.currentRoom);
-    if (resident) {
-      var rx = 400, ry = ROOM.floorY - 4;
-      E.drawCharacter(c, rx, ry, Game.friends[resident.id].cust, 0, -1, 1, false);
-      drawPrompt(c, rx, ry - 116, T('promptTalk'));
-    }
-
-    /* Piano hotspot hint */
-    var pianoItem = findPiano(items);
-    if (pianoItem) {
-      drawPrompt(c, pianoItem.x, pianoItem.y - 116, T('promptPiano'));
-    }
-
-    drawRoomTabs(c);
-    drawPalette(c);
-    drawToast(c);
+  function getRoomPos(id) {
+    if (!roomPos[id]) roomPos[id] = { x: 150, y: 410 };
+    return roomPos[id];
   }
 
-  function drawInteriorWindow(c, cx, cy, rd) {
-    E.fillRound(c, cx - 52, cy - 42, 104, 84, 6, PAL.cream);
-    E.fillRound(c, cx - 45, cy - 35, 90, 70, 4, PAL.sky);
-    /* canopy visible outside */
-    c.save();
-    c.beginPath(); E.roundRect(c, cx - 45, cy - 35, 90, 70, 4); c.clip();
-    E.fillEllipse(c, cx - 22, cy + 22, 34, 26, PAL.leaf, false);
-    E.fillEllipse(c, cx + 26, cy + 16, 30, 24, PAL.leafDark, false);
-    E.fillEllipse(c, cx + 2, cy - 6, 26, 20, PAL.leafLight, false);
-    c.restore();
-    c.strokeStyle = PAL.cream;
-    c.lineWidth = 5;
-    c.beginPath();
-    c.moveTo(cx, cy - 35); c.lineTo(cx, cy + 35);
-    c.moveTo(cx - 45, cy); c.lineTo(cx + 45, cy);
-    c.stroke();
-    E.roundRect(c, cx - 52, cy - 42, 104, 84, 6);
-    E.ink(c, 2.5);
-    /* Little curtain */
-    c.fillStyle = rd.accent;
-    E.fillPath(c, [[cx - 56, cy - 46], [cx + 56, cy - 46], [cx + 56, cy - 34], [cx - 56, cy - 34]], rd.accent);
+  function ensureRoomPlayer() {
+    if (!roomPlayer) roomPlayer = new E.Player(150, 410);
+    var p = getRoomPos(Game.currentRoom);
+    roomPlayer.x = p.x;
+    roomPlayer.y = p.y;
+    return roomPlayer;
   }
+
+  /* Where the friend who lives in this room stands. */
+  function friendSpot() { return { x: 592, y: 336 }; }
 
   function residentOf(roomId) {
     for (var i = 0; i < Game.FRIEND_DEFS.length; i++) {
@@ -1493,70 +1450,278 @@
     return null;
   }
 
+  /* A selection can outlive its stock -- place the last one, reload with a
+     stale selection, clear a room. Drop it rather than leaving a piece
+     selected that can never be placed (taps would silently do nothing). */
+  function validateSelection() {
+    if (selectedPiece && !(Game.furnitureStock[selectedPiece] > 0)) selectedPiece = null;
+  }
+
+  /* ---- update ---- */
+  function updateHouseInterior(keys, jp) {
+    validateSelection();
+    var p = ensureRoomPlayer();
+    var f = ROOM.floor;
+    var moving = false;
+    var SP = 3.2;
+
+    if (keys.left && !keys.right) { p.x -= SP; p.facing = -1; moving = true; }
+    else if (keys.right && !keys.left) { p.x += SP; p.facing = 1; moving = true; }
+    if (keys.up && !keys.down) { p.y -= SP * 0.72; moving = true; }
+    else if (keys.down && !keys.up) { p.y += SP * 0.72; moving = true; }
+
+    if (p.x < f.left) p.x = f.left;
+    if (p.x > f.right) p.x = f.right;
+    if (p.y < f.top) p.y = f.top;
+    if (p.y > f.bottom) p.y = f.bottom;
+    p.animate(moving);
+
+    var store = getRoomPos(Game.currentRoom);
+    store.x = p.x;
+    store.y = p.y;
+
+    if (jp.action) {
+      var near = nearestInRoom(p);
+      if (near) return near;
+    }
+    /* Escape / the pause button walks her back outside. */
+    if (jp.pause) return 'exit';
+    return null;
+  }
+
+  /* What Momoko is standing next to, if anything. */
+  function nearestInRoom(p) {
+    var items = Game.rooms[Game.currentRoom] || [];
+    var piano = findPiano(items);
+    if (piano && Math.abs(p.x - piano.x) < 70 && Math.abs(p.y - piano.y) < 70) return 'piano';
+    var resident = residentOf(Game.currentRoom);
+    if (resident) {
+      var fs = friendSpot();
+      if (Math.abs(p.x - fs.x) < 62 && Math.abs(p.y - fs.y) < 62) return 'design:' + resident.id;
+    }
+    if (Math.abs(p.x - ROOM.floor.right) < 40 && Math.abs(p.y - ROOM.door.y) < 80) return 'exit';
+    return null;
+  }
+
+  /* ---- draw ---- */
+  function drawHouseInterior(c) {
+    t++;
+    var rd = roomDef(Game.currentRoom);
+    var items = Game.rooms[Game.currentRoom] || [];
+    var p = ensureRoomPlayer();
+
+    /* Back wall */
+    var g = c.createLinearGradient(0, ROOM.wallTop, 0, ROOM.floorY);
+    g.addColorStop(0, rd.wallA);
+    g.addColorStop(1, rd.wallB);
+    c.fillStyle = g;
+    c.fillRect(0, ROOM.wallTop, W, ROOM.floorY - ROOM.wallTop);
+    c.save();
+    c.globalAlpha = 0.13;
+    c.strokeStyle = PAL.ink;
+    c.lineWidth = 2;
+    for (var wy = ROOM.wallTop + 16; wy < ROOM.floorY; wy += 18) {
+      c.beginPath(); c.moveTo(0, wy); c.lineTo(W, wy); c.stroke();
+    }
+    c.restore();
+
+    drawInteriorWindow(c, 150, ROOM.wallTop + 4, rd);
+    drawInteriorWindow(c, 470, ROOM.wallTop + 4, rd);
+
+    /* Floor, in perspective so the room reads as a space you walk around */
+    c.fillStyle = rd.floor;
+    c.fillRect(0, ROOM.floorY, W, H - ROOM.floorY);
+    c.save();
+    c.globalAlpha = 0.4;
+    c.strokeStyle = E.shade(rd.floor, -26);
+    c.lineWidth = 2;
+    for (var i = -6; i <= 20; i++) {
+      var topX = i * 60;
+      c.beginPath();
+      c.moveTo(topX, ROOM.floorY);
+      c.lineTo(W / 2 + (topX - W / 2) * 2.1, H);
+      c.stroke();
+    }
+    for (var d = 0; d < 6; d++) {
+      var yy = ROOM.floorY + Math.pow(d / 5, 1.7) * (H - ROOM.floorY);
+      c.beginPath(); c.moveTo(0, yy); c.lineTo(W, yy); c.stroke();
+    }
+    c.restore();
+    /* Skirting board */
+    c.fillStyle = PAL.bark;
+    c.fillRect(0, ROOM.floorY - 10, W, 10);
+
+    drawRoomDoor(c);
+
+    /* Depth-sorted: furniture, Momoko and the resident friend all mingle. */
+    var layer = [];
+    for (var fi = 0; fi < items.length; fi++) {
+      layer.push({ y: items[fi].y, item: items[fi] });
+    }
+    var resident = residentOf(Game.currentRoom);
+    var fs = friendSpot();
+    if (resident) layer.push({ y: fs.y, friend: resident });
+    layer.push({ y: p.y, player: true });
+    layer.sort(function (a, b) { return a.y - b.y; });
+
+    for (var li = 0; li < layer.length; li++) {
+      var e = layer[li];
+      if (e.item) drawFurniture(c, e.item.type, e.item.x, e.item.y, 'placed', e.item.flip);
+      else if (e.friend) E.drawCharacter(c, fs.x, fs.y, Game.friends[e.friend.id].cust, 0, -1, 1, false);
+      else E.drawCharacter(c, p.x, p.y, Game.customization, p.frame, p.facing, 1, p.blink);
+    }
+
+    /* Prompts for whatever she is standing next to */
+    var near = nearestInRoom(p);
+    if (near === 'piano') {
+      var pi = findPiano(items);
+      drawPrompt(c, pi.x, pi.y - 132, T('promptPiano'));
+    } else if (near && near.indexOf('design:') === 0) {
+      drawPrompt(c, fs.x, fs.y - 106, T('promptTalk'));
+    } else if (near === 'exit') {
+      drawPrompt(c, ROOM.door.x - 30, ROOM.door.y - 118, T('furnitureExit'));
+    }
+
+    drawPalette(c);
+    drawRoomTabs(c);
+
+    /* Placement call-out sits over the room, where the eye already is. */
+    if (selectedPiece) {
+      var bw = 420, bx = (W - bw) / 2;
+      c.save();
+      c.globalAlpha = 0.94;
+      panel(c, bx, 210, bw, 38, PAL.sun);
+      c.restore();
+      c.fillStyle = PAL.ink;
+      c.font = 'bold 14px monospace';
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      c.fillText(T('furnitureTapFloor'), W / 2, 229);
+      /* Translucent ghost of the piece, bobbing, so it's clear what lands. */
+      c.save();
+      c.globalAlpha = 0.42 + Math.sin(t / 12) * 0.14;
+      drawFurniture(c, selectedPiece, W / 2, 396 + Math.sin(t / 12) * 4, 'placed');
+      c.restore();
+    }
+
+    drawToast(c);
+  }
+
+  function drawRoomDoor(c) {
+    var d = ROOM.door;
+    E.fillRound(c, d.x - 34, d.y - 104, 68, 104, 6, '#a9773f');
+    E.fillRound(c, d.x - 26, d.y - 94, 52, 44, 4, '#c69a5e');
+    E.fillEllipse(c, d.x + 20, d.y - 50, 4, 4, PAL.sun);
+    /* Daylight spilling in past the frame */
+    c.save();
+    c.globalAlpha = 0.22;
+    E.fillPath(c, [[d.x - 34, d.y], [d.x + 34, d.y], [d.x + 54, d.y + 26], [d.x - 54, d.y + 26]], PAL.sun, true, false);
+    c.restore();
+  }
+
+  function drawInteriorWindow(c, cx, cy, rd) {
+    E.fillRound(c, cx - 44, cy, 88, 40, 5, PAL.cream);
+    E.fillRound(c, cx - 38, cy + 5, 76, 30, 3, PAL.sky);
+    c.save();
+    c.beginPath(); E.roundRect(c, cx - 38, cy + 5, 76, 30, 3); c.clip();
+    E.fillEllipse(c, cx - 18, cy + 34, 28, 20, PAL.leaf, false);
+    E.fillEllipse(c, cx + 22, cy + 30, 24, 18, PAL.leafDark, false);
+    E.fillEllipse(c, cx + 2, cy + 16, 20, 14, PAL.leafLight, false);
+    c.restore();
+    c.strokeStyle = PAL.cream;
+    c.lineWidth = 4;
+    c.beginPath();
+    c.moveTo(cx, cy + 5); c.lineTo(cx, cy + 35);
+    c.moveTo(cx - 38, cy + 20); c.lineTo(cx + 38, cy + 20);
+    c.stroke();
+    E.roundRect(c, cx - 44, cy, 88, 40, 5);
+    E.ink(c, 2.5);
+    c.fillStyle = rd.accent;
+    E.fillPath(c, [[cx - 48, cy - 4], [cx + 48, cy - 4], [cx + 48, cy + 6], [cx - 48, cy + 6]], rd.accent);
+  }
+
   function drawRoomTabs(c) {
-    c.fillStyle = 'rgba(59, 42, 22, 0.9)';
-    c.fillRect(0, 0, W, ROOM.top - 4);
+    c.fillStyle = 'rgba(59, 42, 22, 0.92)';
+    c.fillRect(0, 0, W, ROOM.stripY);
     for (var i = 0; i < Game.ROOMS.length; i++) {
-      var r = roomTabRect(i);
-      button(c, r, T(Game.ROOMS[i].nameKey),
+      button(c, roomTabRect(i), T(Game.ROOMS[i].nameKey),
         { active: Game.ROOMS[i].id === Game.currentRoom, font: 12, r: 7 });
     }
+    button(c, ROOM.exit, T('furnitureExit'), { font: 13, fill: PAL.leafLight });
   }
 
   function drawPalette(c) {
-    var p = ROOM.palette;
-    panel(c, p.x, p.y, p.w, p.h);
+    c.fillStyle = 'rgba(36, 23, 8, 0.86)';
+    c.fillRect(0, ROOM.stripY, W, ROOM.stripH);
+    c.strokeStyle = 'rgba(255, 210, 74, 0.45)';
+    c.lineWidth = 2;
+    c.beginPath();
+    c.moveTo(0, ROOM.stripY + ROOM.stripH);
+    c.lineTo(W, ROOM.stripY + ROOM.stripH);
+    c.stroke();
+
+    c.fillStyle = PAL.sun;
+    c.font = 'bold 14px monospace';
+    c.textAlign = 'left';
+    c.textBaseline = 'middle';
+    c.fillText(T('furnitureTitle'), 14, ROOM.stripY + 18);
+    /* The two-step instruction, right where the two steps happen. */
+    c.fillStyle = 'rgba(255, 244, 220, 0.8)';
+    c.font = '11px monospace';
+    c.fillText(T('furnitureHint'), 152, ROOM.stripY + 18);
+
+    button(c, ROOM.clear, T('furnitureClear'), { font: 11, fill: '#e88a7a', r: 6 });
 
     for (var i = 0; i < Game.FURNITURE_CATEGORIES.length; i++) {
-      var cr = catRect(i);
-      button(c, cr, T('furnitureCat_' + Game.FURNITURE_CATEGORIES[i]),
+      button(c, catRect(i), T('furnitureCat_' + Game.FURNITURE_CATEGORIES[i]),
         { active: Game.FURNITURE_CATEGORIES[i] === roomCat, font: 10, r: 6 });
     }
 
     var items = paletteItems();
-    if (items.length === 0) {
-      c.fillStyle = 'rgba(74,51,32,0.65)';
-      c.font = '12px monospace';
-      c.textAlign = 'left';
+    for (var k = 0; k < items.length && k < 9; k++) {
+      var ir = paletteItemRect(k);
+      var owned = items[k].count > 0;
+      var sel = selectedPiece === items[k].type;
+      c.fillStyle = sel ? PAL.sun : (owned ? 'rgba(255,244,220,0.95)' : 'rgba(255,244,220,0.28)');
+      E.roundRect(c, ir.x, ir.y, ir.w, ir.h, 8);
+      c.fill();
+      E.ink(c, sel ? 3.5 : 1.6);
+
+      c.save();
+      if (!owned) c.globalAlpha = 0.45;
+      drawFurniture(c, items[k].type, ir.x + ir.w / 2, ir.y + ir.h - 22, 'palette');
+      c.restore();
+
+      c.fillStyle = owned ? PAL.ink : 'rgba(74,51,32,0.6)';
+      c.font = 'bold 8px monospace';
+      c.textAlign = 'center';
       c.textBaseline = 'middle';
-      c.fillText(T('furnitureEmpty'), ROOM.itemX, ROOM.itemY + ROOM.itemSize / 2);
-    } else {
-      for (var k = 0; k < items.length && k < 10; k++) {
-        var ir = paletteItemRect(k);
-        var sel = selectedPiece === items[k].type;
-        c.fillStyle = sel ? PAL.sun : 'rgba(255,244,220,0.95)';
-        E.roundRect(c, ir.x, ir.y, ir.w, ir.h, 7);
-        c.fill();
-        E.ink(c, sel ? 3 : 1.6);
-        drawFurniture(c, items[k].type, ir.x + ir.w / 2, ir.y + ir.h - 8, 'palette');
-        /* count badge */
-        c.fillStyle = PAL.leaf;
-        E.fillEllipse(c, ir.x + ir.w - 8, ir.y + 8, 9, 9, PAL.leaf);
+      c.fillText(T('furniture_' + items[k].type), ir.x + ir.w / 2, ir.y + ir.h - 9);
+
+      /* Count badge, or a little cart when you don't own one yet. */
+      if (owned) {
+        E.fillEllipse(c, ir.x + ir.w - 10, ir.y + 10, 10, 10, PAL.leaf);
         c.fillStyle = PAL.cream;
         c.font = 'bold 11px monospace';
-        c.textAlign = 'center';
-        c.textBaseline = 'middle';
-        c.fillText(String(items[k].count), ir.x + ir.w - 8, ir.y + 8);
+        c.fillText(String(items[k].count), ir.x + ir.w - 10, ir.y + 10);
+      } else {
+        E.fillEllipse(c, ir.x + ir.w - 10, ir.y + 10, 10, 10, 'rgba(74,51,32,0.5)');
+        c.fillStyle = PAL.cream;
+        c.font = 'bold 10px monospace';
+        c.fillText('0', ir.x + ir.w - 10, ir.y + 10);
       }
     }
-
-    c.fillStyle = 'rgba(74,51,32,0.6)';
-    c.font = '10px monospace';
-    c.textAlign = 'left';
-    c.textBaseline = 'middle';
-    c.fillText(T('furnitureHint'), ROOM.itemX, p.y + p.h - 8);
-
-    button(c, ROOM.exit, T('furnitureExit'), { font: 14, fill: PAL.leafLight });
-    button(c, ROOM.clear, T('furnitureClear'), { font: 12, fill: 'rgba(255,244,220,0.85)' });
   }
 
-  /* Returns 'exit', 'piano', 'design:<id>' or null. */
+  /* ---- clicks ---- */
   function handleHouseInteriorClick(mx, my) {
     var i;
+    validateSelection();
     for (i = 0; i < Game.ROOMS.length; i++) {
       if (hit(roomTabRect(i), mx, my)) {
         Game.currentRoom = Game.ROOMS[i].id;
         selectedPiece = null;
+        ensureRoomPlayer();
         return 'select';
       }
     }
@@ -1572,32 +1737,42 @@
     }
 
     var items = paletteItems();
-    for (i = 0; i < items.length && i < 10; i++) {
+    for (i = 0; i < items.length && i < 9; i++) {
       if (hit(paletteItemRect(i), mx, my)) {
+        if (items[i].count <= 0) {
+          showToast(T('furnitureNeedBuy'));
+          Game.audio.play('deny');
+          return null;
+        }
         selectedPiece = (selectedPiece === items[i].type) ? null : items[i].type;
         return 'select';
       }
     }
 
-    /* Tapping in the room: place the selected piece, or pick one back up. */
-    if (my >= ROOM.top && my <= ROOM.bottom) {
-      if (selectedPiece) {
-        placePiece(mx, my);
-        return null;
-      }
+    /* Below the palette strip is the room itself. */
+    if (my > ROOM.stripY + ROOM.stripH) {
+      if (selectedPiece) { placePiece(mx, my); return null; }
+
       var placed = Game.rooms[Game.currentRoom] || [];
       var pianoItem = findPiano(placed);
-      if (pianoItem && Math.abs(mx - pianoItem.x) < 60 && my > pianoItem.y - 90) return 'piano';
-
+      if (pianoItem && Math.abs(mx - pianoItem.x) < 60 && my > pianoItem.y - 100 && my < pianoItem.y + 20) {
+        return 'piano';
+      }
       var resident = residentOf(Game.currentRoom);
-      if (resident && Math.abs(mx - 400) < 46 && my > ROOM.floorY - 120) return 'design:' + resident.id;
-
-      /* Otherwise pick up whatever was tapped (topmost first). */
+      var fs = friendSpot();
+      if (resident && Math.abs(mx - fs.x) < 44 && my > fs.y - 96 && my < fs.y + 16) {
+        return 'design:' + resident.id;
+      }
+      if (Math.abs(mx - ROOM.door.x) < 40 && my > ROOM.door.y - 110 && my < ROOM.door.y + 10) {
+        return 'exit';
+      }
+      /* Otherwise pick up whatever was tapped, topmost first. */
       for (i = placed.length - 1; i >= 0; i--) {
         var it = placed[i];
-        if (Math.abs(mx - it.x) < 40 && Math.abs(my - (it.y - 26)) < 46) {
+        if (Math.abs(mx - it.x) < 42 && my > it.y - 78 && my < it.y + 18) {
           placed.splice(i, 1);
           addStock(it.type, 1);
+          if (it.type === 'piano') Game.flags.pianoPlaced = anyPianoPlaced();
           Game.audio.play('drop');
           saveRooms();
           return null;
@@ -1611,8 +1786,9 @@
     var type = selectedPiece;
     var store = Game.furnitureStock;
     if (!store[type]) { selectedPiece = null; return; }
-    var x = Math.max(ROOM.placeMinX, Math.min(ROOM.placeMaxX, mx));
-    var y = Math.max(ROOM.placeMinY, Math.min(ROOM.placeMaxY, my));
+    var f = ROOM.floor;
+    var x = Math.max(f.left, Math.min(f.right, mx));
+    var y = Math.max(f.top, Math.min(f.bottom, my));
     Game.rooms[Game.currentRoom].push({ type: type, x: x, y: y, flip: false });
     store[type]--;
     if (store[type] <= 0) {
@@ -1630,10 +1806,12 @@
 
   function clearRoom() {
     var placed = Game.rooms[Game.currentRoom] || [];
+    if (placed.length === 0) { Game.audio.play('deny'); return; }
     for (var i = 0; i < placed.length; i++) addStock(placed[i].type, 1);
     Game.rooms[Game.currentRoom] = [];
     Game.flags.pianoPlaced = anyPianoPlaced();
     Game.audio.play('drop');
+    showToast(T('furniturePickUp'));
     saveRooms();
   }
 
@@ -1652,17 +1830,13 @@
     if (Game.engine && Game.engine.save) Game.engine.save();
   }
 
-  function updateHouseInterior(keys, jp) {
-    if (jp.pause) return 'exit';
-    return null;
-  }
-
   /* ================================================================
      Furniture painter
      Anchor is bottom-centre. mode: 'placed' (full) or 'palette' (small).
      ================================================================ */
   function drawFurniture(c, type, x, y, mode, flip) {
     var s = mode === 'palette' ? 0.52 : 1;
+    var absY = y;               /* pre-translate, so hanging pieces can reach the ceiling */
     c.save();
     c.translate(x, y);
     c.scale(s * (flip ? -1 : 1), s);
@@ -1860,6 +2034,56 @@
         E.fillEllipse(c, -8, -54, 10, 7, PAL.leafLight, false);
         E.fillEllipse(c, 8, -62, 7, 7, PAL.peach, false);
         break;
+      case 'fridge':
+        E.fillRound(c, -28, -100, 56, 100, 7, '#eef2f4');
+        /* freezer door on top, fridge door below */
+        c.strokeStyle = E.shade('#eef2f4', -26);
+        c.lineWidth = 2;
+        c.beginPath(); c.moveTo(-26, -66); c.lineTo(26, -66); c.stroke();
+        E.fillRound(c, 14, -92, 5, 18, 2.5, '#b9c2c8');
+        E.fillRound(c, 14, -58, 5, 30, 2.5, '#b9c2c8');
+        /* a couple of magnets, because every fridge has them */
+        E.fillEllipse(c, -12, -84, 5, 5, PAL.peach, false);
+        E.fillRound(c, -18, -50, 14, 11, 2, PAL.sun, false);
+        E.roundRect(c, -28, -100, 56, 100, 7);
+        E.ink(c, 2);
+        break;
+      case 'discoBall':
+        /* Hangs from the ceiling, so the chain length depends on where in
+           the room it was placed. In the palette it gets a stub chain. */
+        var chain = (mode === 'palette') ? 18 : Math.max(18, absY - ROOM.wallTop - 8);
+        c.strokeStyle = PAL.ink;
+        c.lineWidth = 2;
+        c.beginPath(); c.moveTo(0, -24); c.lineTo(0, -24 - chain); c.stroke();
+        if (mode !== 'palette') E.fillRound(c, -11, -24 - chain - 7, 22, 8, 3, PAL.bark);
+        E.fillEllipse(c, 0, 0, 24, 24, '#cfd8de');
+        /* mirrored facets */
+        c.save();
+        c.beginPath(); c.arc(0, 0, 23, 0, Math.PI * 2); c.clip();
+        c.strokeStyle = 'rgba(74,51,32,0.35)';
+        c.lineWidth = 1.2;
+        for (var dv = -24; dv <= 24; dv += 8) {
+          c.beginPath(); c.moveTo(dv, -24); c.lineTo(dv, 24); c.stroke();
+          c.beginPath(); c.moveTo(-24, dv); c.lineTo(24, dv); c.stroke();
+        }
+        var tiles = [[-12, -10, PAL.sky], [4, -14, PAL.peach], [12, 2, PAL.sun],
+                     [-6, 8, PAL.leafLight], [-16, 4, '#ffffff'], [6, 12, PAL.sky]];
+        for (var ti = 0; ti < tiles.length; ti++) {
+          c.globalAlpha = 0.75;
+          c.fillStyle = tiles[ti][2];
+          c.fillRect(tiles[ti][0], tiles[ti][1], 7, 7);
+        }
+        c.restore();
+        E.fillEllipse(c, 0, 0, 24, 24, 'rgba(0,0,0,0)');
+        /* sparkles thrown off the ball */
+        c.save();
+        c.globalAlpha = 0.55 + Math.sin(t / 9) * 0.25;
+        c.fillStyle = PAL.cream;
+        E.star(c, -34, -14, 5);
+        E.star(c, 33, 6, 4);
+        E.star(c, 8, -34, 4);
+        c.restore();
+        break;
       case 'piano':
         /* Upright piano seen head-on. */
         E.fillRound(c, -58, -96, 116, 74, 6, '#6b4a2f');
@@ -1999,6 +2223,8 @@
     drawHouseInterior: drawHouseInterior, handleHouseInteriorClick: handleHouseInteriorClick,
     updateHouseInterior: updateHouseInterior, drawFurniture: drawFurniture,
     addStock: addStock, anyPianoPlaced: anyPianoPlaced, residentOf: residentOf,
+    getRoomPlayer: function () { return roomPlayer; },
+    getSelectedPiece: function () { return selectedPiece; },
     /* pause / victory */
     drawPauseMenu: drawPauseMenu, handlePauseClick: handlePauseClick,
     drawVictory: drawVictory, handleVictoryClick: handleVictoryClick,

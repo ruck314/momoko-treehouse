@@ -39,7 +39,10 @@ keys, and slide a finger across the keyboard for a glissando.
 - **Six build stages**, each costing exactly one bagful of materials
 - **Exterior designer** — wall material, roof style, door, windows, colours and
   seven decorations
-- **Four furnished rooms** — 24 pieces of furniture to buy, carry home and place
+- **Four furnished rooms** — walk Momoko around the floor and place any of 26
+  pieces of furniture, bought at the shop and carried home. Each room starts
+  with a piece or two of its own so it is never a bare box: a bed in the
+  bedroom, a table and fridge in the kitchen, a disco ball in the music room.
 - **Five designable characters** — Momoko plus Lila, Kai, Nori and Poppy
 
 ## Build stages

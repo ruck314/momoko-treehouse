@@ -129,6 +129,7 @@
     { type: 'coffeeTable', cat: 'table' },
     { type: 'desk',        cat: 'table' },
     { type: 'shelf',       cat: 'table' },
+    { type: 'fridge',      cat: 'table' },
     { type: 'lamp',        cat: 'light' },
     { type: 'lantern',     cat: 'light' },
     { type: 'candle',      cat: 'light' },
@@ -141,7 +142,26 @@
     { type: 'teaSet',      cat: 'fun' },
     { type: 'toybox',      cat: 'fun' },
     { type: 'easel',       cat: 'fun' },
+    { type: 'discoBall',   cat: 'fun' },
   ];
+
+  /* Furniture every room starts with, so no room is ever a bare box and it
+     is obvious what a furnished room is supposed to look like. Applied once
+     per save (see the starterFurniture flag in engine.js) and only to rooms
+     that are still empty, so it can never overwrite the player's own work. */
+  Game.STARTER_FURNITURE = {
+    main: [],
+    bed: [
+      { type: 'bed', x: 190, y: 330, flip: false },
+    ],
+    kitchen: [
+      { type: 'table', x: 420, y: 336, flip: false },
+      { type: 'fridge', x: 680, y: 330, flip: false },
+    ],
+    music: [
+      { type: 'discoBall', x: 400, y: 300, flip: false },
+    ],
+  };
 
   /* ---- Rooms ---- */
   Game.ROOMS = [

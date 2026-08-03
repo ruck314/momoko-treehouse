@@ -38,7 +38,7 @@
       promptBuild: 'Build',
       promptEnter: 'Go Inside',
       promptPaint: 'Decorate',
-      promptTalk: 'Talk',
+      promptTalk: 'Design',
       promptPiano: 'Play Piano',
       bagLabel: 'Bag',
       bagFull: 'Your bag is full!',
@@ -90,6 +90,8 @@
       shopPianoHeavy: 'The piano is heavy —\nit fills your whole bag!',
       shopPianoSold: 'You already have a piano!',
       shopExit: 'Leave Shop',
+      shopEmptyBag: 'Empty Bag',
+      shopBagEmptied: 'Bag emptied.',
       shopkeeperName: 'Mr. Acorn',
 
       /* ---- Exterior customizer ---- */
@@ -131,9 +133,12 @@
       roomMusic: 'Music Room',
       furnitureTitle: 'Place Furniture',
       furnitureExit: 'Go Outside',
-      furnitureClear: 'Clear Room',
-      furnitureHint: 'Tap a piece, then tap where it goes.',
+      furnitureClear: 'Clear All',
+      furnitureHint: '1. Tap a piece above   2. Tap the floor',
+      furnitureTapFloor: 'Now tap the floor to put it down!',
+      furnitureNeedBuy: 'Buy this one at the shop first!',
       furnitureEmpty: 'Buy furniture at the shop!',
+      furniturePickUp: 'Tap a piece you placed to pick it back up.',
       furnitureCat_sleep: 'Sleep',
       furnitureCat_seat: 'Seating',
       furnitureCat_table: 'Tables',
@@ -165,6 +170,9 @@
       furniture_clock: 'Clock',
       furniture_teaSet: 'Tea Set',
       furniture_toybox: 'Toy Box',
+      furniture_easel: 'Easel',
+      furniture_fridge: 'Fridge',
+      furniture_discoBall: 'Disco Ball',
       furniture_piano: 'Piano',
 
       /* ---- Character designer ---- */
@@ -272,7 +280,7 @@
       promptBuild: 'つくる',
       promptEnter: 'なかへ',
       promptPaint: 'かざる',
-      promptTalk: 'はなす',
+      promptTalk: 'デザイン',
       promptPiano: 'ピアノを ひく',
       bagLabel: 'かばん',
       bagFull: 'かばんが いっぱい！',
@@ -324,6 +332,8 @@
       shopPianoHeavy: 'ピアノは おもいから\nかばんが いっぱいに なるよ！',
       shopPianoSold: 'ピアノは もう もっているよ！',
       shopExit: 'おみせを でる',
+      shopEmptyBag: 'かばんを からに',
+      shopBagEmptied: 'かばんを からに しました。',
       shopkeeperName: 'どんぐりさん',
 
       /* ---- Exterior customizer ---- */
@@ -366,8 +376,11 @@
       furnitureTitle: 'かぐを おく',
       furnitureExit: 'そとへ でる',
       furnitureClear: 'ぜんぶ かたづける',
-      furnitureHint: 'かぐを タップして おく ばしょを タップ。',
+      furnitureHint: '1. うえの かぐを タップ　2. ゆかを タップ',
+      furnitureTapFloor: 'ゆかを タップして おこう！',
+      furnitureNeedBuy: 'さきに おみせで かおう！',
       furnitureEmpty: 'おみせで かぐを かおう！',
+      furniturePickUp: 'おいた かぐを タップすると もどせるよ。',
       furnitureCat_sleep: 'ねる',
       furnitureCat_seat: 'すわる',
       furnitureCat_table: 'テーブル',
@@ -399,6 +412,9 @@
       furniture_clock: 'とけい',
       furniture_teaSet: 'ティーセット',
       furniture_toybox: 'おもちゃばこ',
+      furniture_easel: 'イーゼル',
+      furniture_fridge: 'れいぞうこ',
+      furniture_discoBall: 'ミラーボール',
       furniture_piano: 'ピアノ',
 
       /* ---- Character designer ---- */

@@ -1,7 +1,7 @@
 /* Bump this string alongside Game.VERSION in js/engine.js on every release.
    A new CACHE_NAME forces the activate handler to purge the old cache, so
    returning visitors pick up the new bundle on their next page load. */
-var CACHE_NAME = 'momoko-treehouse-v1.0.0';
+var CACHE_NAME = 'momoko-treehouse-v1.1.0';
 var ASSETS = [
   './',
   './index.html',
