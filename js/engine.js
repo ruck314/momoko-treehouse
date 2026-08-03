@@ -13,7 +13,7 @@
   var GAME_X = 0, GAME_Y = 0;
 
   /* Bump alongside CACHE_NAME in sw.js and tag the matching git release. */
-  Game.VERSION = 'v1.1.0';
+  Game.VERSION = 'v1.2.0';
 
   var canvas, ctx;
 
@@ -125,6 +125,18 @@
       Game.build.stageIndex = Math.max(0, Math.min(Game.BUILD_STAGES.length, b.stageIndex || 0));
       Game.build.stock = b.stock || {};
       Game.bag.items = Array.isArray(b.bag) ? b.bag.slice(0, Game.bag.MAX) : [];
+      /* Saves from v1.1.0 and earlier stored the piano as five separate
+         entries. Collapse them into the single whole-bag item. */
+      var pianoCount = 0, rest = [];
+      for (var bi = 0; bi < Game.bag.items.length; bi++) {
+        if (Game.bag.items[bi] && Game.bag.items[bi].kind === 'piano') pianoCount++;
+        else rest.push(Game.bag.items[bi]);
+      }
+      if (pianoCount > 0) {
+        Game.bag.items = [{ kind: 'piano', type: 'piano', slots: Game.bag.MAX }];
+      } else {
+        Game.bag.items = rest;
+      }
     }
 
     var ext = readJSON('exterior');
@@ -273,11 +285,15 @@
   }
 
   /* ---- Delivery ---- */
-  function deliverBag() {
+  /* `silent` is used when delivery is a side effect of something else (going
+     up the ladder), where an empty bag is normal and shouldn't be scolded. */
+  function deliverBag(silent) {
     if (Game.bag.items.length === 0) {
-      Game.ui.showToast(Game.i18n.t('nothingToDeliver'));
-      Game.audio.play('deny');
-      return;
+      if (!silent) {
+        Game.ui.showToast(Game.i18n.t('nothingToDeliver'));
+        Game.audio.play('deny');
+      }
+      return false;
     }
 
     var materials = 0, furniture = 0, piano = false;
@@ -304,10 +320,11 @@
 
     var advanced = tryAdvanceStage();
     if (!advanced) {
-      if (materials > 0) Game.ui.showToast(Game.i18n.t('deliveredSome'));
-      else Game.ui.showToast(Game.i18n.t('deliveredSome'));
+      Game.ui.showToast(Game.i18n.t(
+        (furniture > 0 || piano) ? 'deliveredFurniture' : 'deliveredSome'));
     }
     save();
+    return true;
   }
 
   /* Completes one stage if the pile now covers it. Only ever one at a
@@ -452,8 +469,17 @@
       var target = nearest();
       if (!target) return;
       if (target.id === 'shop') { enterShop(); return; }
-      if (target.id === 'build') { deliverBag(); return; }
-      if (target.id === 'enter') { enterHouse(); return; }
+      if (target.id === 'build') { deliverBag(false); return; }
+      if (target.id === 'enter') {
+        /* The ladder sits in front of the build spot, so this is the hotspot
+           the player actually reaches while carrying a full bag. Unload it
+           here too, otherwise the shopping never makes it into the house. */
+        deliverBag(true);
+        /* A delivery that completes a stage opens its cutscene; let that
+           play instead of yanking her indoors. */
+        if (state === State.PLAYING) enterHouse();
+        return;
+      }
       if (target.id === 'paint') { state = State.EXTERIOR; Game.audio.play('select'); return; }
       if (target.id.indexOf('friend:') === 0) {
         var fid = target.id.slice(7);

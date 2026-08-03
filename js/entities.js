@@ -462,16 +462,30 @@
     c.drawImage(spr, d.x - 17, d.y - 28);
   }
 
+  /* Shrink a label until it fits `maxW`, so a Japanese string (wider glyphs)
+     never overflows a sign painted for English. */
+  function fitText(c, text, maxW, basePx) {
+    var px = basePx;
+    c.font = 'bold ' + px + 'px monospace';
+    while (px > 7 && c.measureText(text).width > maxW) {
+      px -= 1;
+      c.font = 'bold ' + px + 'px monospace';
+    }
+  }
+
   function drawSignpost(c, d) {
-    var spr = getCachedSprite('signpost', 76, 76, function (g) {
+    /* Cache key includes the language: the sign has words on it. */
+    var lang = (window.Game && Game.i18n) ? Game.i18n.getLang() : 'en';
+    var spr = getCachedSprite('signpost_' + lang, 76, 76, function (g) {
       g.translate(38, 74);
       fillRound(g, -3, -56, 6, 56, 2, PAL.bark);
       fillRound(g, -30, -56, 60, 22, 4, PAL.barkLight);
       g.fillStyle = PAL.ink;
-      g.font = 'bold 12px monospace';
       g.textAlign = 'center';
       g.textBaseline = 'middle';
-      g.fillText('SHOP', -8, -45);
+      var shopWord = (window.Game && Game.i18n) ? Game.i18n.t('signShop') : 'SHOP';
+      fitText(g, shopWord, 42, 12);
+      g.fillText(shopWord, -8, -45);
       /* arrow pointing back down the path */
       fillPath(g, [[14, -50], [24, -45], [14, -40]], PAL.ink, true, false);
     });
@@ -525,10 +539,11 @@
     /* sign board */
     fillRound(c, x - 96, top + 56, 192, 30, 6, '#c05a48');
     c.fillStyle = PAL.cream;
-    c.font = 'bold 15px monospace';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    c.fillText('ACORN & PLANK', x, top + 72);
+    var signName = (window.Game && Game.i18n) ? Game.i18n.t('shopSignName') : 'ACORN & PLANK';
+    fitText(c, signName, 180, 15);
+    c.fillText(signName, x, top + 72);
 
     /* window */
     fillRound(c, left + 24, top + 100, 74, 56, 5, '#bfe6f2');
@@ -831,6 +846,7 @@
     drawMeadowDecor: drawMeadowDecor,
     drawShop: drawShop,
     drawMaterialIcon: drawMaterialIcon,
+    fitText: fitText,
     Particle: Particle,
     spawnBurst: spawnBurst,
     Player: Player,

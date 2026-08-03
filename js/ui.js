@@ -183,7 +183,7 @@
     multiline(c, T('instructions'), W / 2, 190, 24);
     c.font = '13px monospace';
     c.fillStyle = 'rgba(74,51,32,0.7)';
-    c.fillText('(tap anywhere to close)', W / 2, 352);
+    c.fillText(T('closeHint'), W / 2, 352);
   }
 
   function drawResetConfirm(c) {
@@ -785,17 +785,32 @@
     c.font = 'bold 14px monospace';
     c.textAlign = 'left';
     c.textBaseline = 'middle';
-    c.fillText(T('shopCart') + ' ' + Game.bag.items.length + ' / ' + Game.bag.MAX, p.x + 14, p.y + 20);
+    c.fillText(T('shopCart') + ' ' + bagUsed() + ' / ' + Game.bag.MAX, p.x + 14, p.y + 20);
 
-    for (var i = 0; i < Game.bag.MAX; i++) {
-      var s = SHOP.slot;
-      var sx = s.x + i * (s.size + s.gap);
-      var item = Game.bag.items[i];
-      c.fillStyle = item ? '#f6e6c8' : 'rgba(74,51,32,0.12)';
-      E.roundRect(c, sx, s.y, s.size, s.size, 8);
+    var s = SHOP.slot;
+    var fullW = Game.bag.MAX * s.size + (Game.bag.MAX - 1) * s.gap;
+    if (hasPianoInBag()) {
+      /* One wide cell, so it reads as a single very large purchase. */
+      c.fillStyle = '#f6e6c8';
+      E.roundRect(c, s.x, s.y, fullW, s.size, 8);
       c.fill();
-      E.ink(c, item ? 2 : 1.4);
-      if (item) drawBagItemIcon(c, item, sx + s.size / 2, s.y + s.size / 2, 34);
+      E.ink(c, 2);
+      drawFurniture(c, 'piano', s.x + 62, s.y + s.size - 6, 'palette');
+      c.fillStyle = PAL.ink;
+      c.font = 'bold 13px monospace';
+      c.textAlign = 'left';
+      c.textBaseline = 'middle';
+      c.fillText(T('furniture_piano'), s.x + 118, s.y + s.size / 2);
+    } else {
+      for (var i = 0; i < Game.bag.MAX; i++) {
+        var sx = s.x + i * (s.size + s.gap);
+        var item = Game.bag.items[i];
+        c.fillStyle = item ? '#f6e6c8' : 'rgba(74,51,32,0.12)';
+        E.roundRect(c, sx, s.y, s.size, s.size, 8);
+        c.fill();
+        E.ink(c, item ? 2 : 1.4);
+        if (item) drawBagItemIcon(c, item, sx + s.size / 2, s.y + s.size / 2, 34);
+      }
     }
 
     if (Game.bag.items.length === 0) {
@@ -887,18 +902,27 @@
     return null;
   }
 
+  /* How much of the bag is used. Most things take one slot; the piano is a
+     single item that takes all five. */
+  function bagUsed() {
+    var n = 0;
+    for (var i = 0; i < Game.bag.items.length; i++) n += (Game.bag.items[i].slots || 1);
+    return n;
+  }
+
   function buyItem(cell) {
     if (cell.kind === 'piano') {
       if (Game.flags.pianoOwned) { showToast(T('shopPianoSold')); Game.audio.play('deny'); return; }
       if (Game.bag.items.length > 0) { showToast(T('shopPianoHeavy')); Game.audio.play('deny'); return; }
-      /* The piano fills the whole bag – heavy, and it keeps delivery simple. */
-      for (var i = 0; i < Game.bag.MAX; i++) Game.bag.items.push({ kind: 'piano', type: 'piano' });
+      /* One item that occupies the whole bag, rather than five copies of a
+         piano -- five pianos in the bag read as five pianos. */
+      Game.bag.items.push({ kind: 'piano', type: 'piano', slots: Game.bag.MAX });
       shopFlash = 'piano'; shopFlashTimer = 20;
       showToast(T('shopPianoHeavy'));
       Game.audio.play('pickup');
       return;
     }
-    if (Game.bag.items.length >= Game.bag.MAX) {
+    if (bagUsed() >= Game.bag.MAX) {
       showToast(T('bagFull'));
       Game.audio.play('deny');
       return;
@@ -932,7 +956,7 @@
     var added = 0;
     var keys = Object.keys(remaining);
     for (var i = 0; i < keys.length; i++) {
-      while (remaining[keys[i]] > 0 && Game.bag.items.length < Game.bag.MAX) {
+      while (remaining[keys[i]] > 0 && bagUsed() < Game.bag.MAX) {
         Game.bag.items.push({ kind: 'material', type: keys[i] });
         remaining[keys[i]]--;
         added++;
@@ -1018,14 +1042,22 @@
     c.restore();
     E.roundRect(c, x0 - 10, y0 - 8, totalW + 20, size + 16, 10);
     E.ink(c, 2);
-    for (var i = 0; i < n; i++) {
-      var sx = x0 + i * (size + gap);
-      var item = Game.bag.items[i];
-      c.fillStyle = item ? '#f6e6c8' : 'rgba(74,51,32,0.14)';
-      E.roundRect(c, sx, y0, size, size, 6);
+    if (hasPianoInBag()) {
+      c.fillStyle = '#f6e6c8';
+      E.roundRect(c, x0, y0, totalW, size, 6);
       c.fill();
       E.ink(c, 1.4);
-      if (item) drawBagItemIcon(c, item, sx + size / 2, y0 + size / 2, 22);
+      drawFurniture(c, 'piano', x0 + totalW / 2, y0 + size - 3, 'palette');
+    } else {
+      for (var i = 0; i < n; i++) {
+        var sx = x0 + i * (size + gap);
+        var item = Game.bag.items[i];
+        c.fillStyle = item ? '#f6e6c8' : 'rgba(74,51,32,0.14)';
+        E.roundRect(c, sx, y0, size, size, 6);
+        c.fill();
+        E.ink(c, 1.4);
+        if (item) drawBagItemIcon(c, item, sx + size / 2, y0 + size / 2, 22);
+      }
     }
   }
 
@@ -1035,6 +1067,16 @@
     if (n === 0) return;
     var sx = player.x - camX;
     var baseY = player.y - 74;
+    if (hasPianoInBag()) {
+      /* One piano bobbing overhead, not five. */
+      var bobP = Math.sin(t / 14) * 3;
+      c.save();
+      c.globalAlpha = 0.95;
+      E.fillEllipse(c, sx, baseY + bobP - 8, 30, 22, 'rgba(255,244,220,0.9)');
+      drawFurniture(c, 'piano', sx, baseY + bobP + 4, 'palette');
+      c.restore();
+      return;
+    }
     for (var i = 0; i < n; i++) {
       var offset = (i - (n - 1) / 2) * 20;
       var bob = Math.sin(t / 14 + i * 0.9) * 3;
@@ -1415,9 +1457,10 @@
       if (ft.cat !== roomCat) continue;
       out.push({ type: ft.type, count: store[ft.type] || 0 });
     }
-    if (roomCat === 'fun' && (store.piano || 0) > 0) {
-      out.push({ type: 'piano', count: store.piano });
-    }
+    /* The piano isn't in FURNITURE_TYPES (it's a shop special), but it still
+       belongs on the Fun shelf -- greyed out with a zero badge until you own
+       one, so it's discoverable rather than appearing from nowhere. */
+    if (roomCat === 'fun') out.push({ type: 'piano', count: store.piano || 0 });
     return out;
   }
 
@@ -2089,10 +2132,11 @@
         E.fillRound(c, -58, -96, 116, 74, 6, '#6b4a2f');
         E.fillRound(c, -52, -90, 104, 34, 4, E.shade('#6b4a2f', 14));
         c.fillStyle = PAL.sun;
-        c.font = 'bold 8px monospace';
         c.textAlign = 'center';
         c.textBaseline = 'middle';
-        c.fillText('MOMOKO', 0, -73);
+        var plateName = T('friend_momoko');
+        E.fitText(c, plateName, 90, 8);
+        c.fillText(plateName, 0, -73);
         /* keybed */
         E.fillRound(c, -62, -26, 124, 16, 4, '#3b2a16');
         for (var wk = 0; wk < 12; wk++) {
@@ -2214,6 +2258,7 @@
     drawCarryOverlay: drawCarryOverlay, drawPrompt: drawPrompt,
     /* build stage maths */
     currentStage: currentStage, remainingNeeds: remainingNeeds, stageSatisfied: stageSatisfied,
+    bagUsed: bagUsed, hasPianoInBag: hasPianoInBag,
     /* cutscene */
     startBuildCutscene: startBuildCutscene, updateBuildCutscene: updateBuildCutscene,
     drawBuildCutsceneOverlay: drawBuildCutsceneOverlay,

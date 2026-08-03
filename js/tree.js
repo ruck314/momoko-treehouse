@@ -466,10 +466,11 @@
     var y = a.houseTop + 8;
     E.fillRound(c, cx - 36, y, 72, 22, 5, PAL.barkLight);
     c.fillStyle = PAL.ink;
-    c.font = 'bold 12px monospace';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    c.fillText('MOMOKO', cx, y + 12);
+    var name = Game.i18n.t('friend_momoko');
+    E.fitText(c, name, 64, 12);
+    c.fillText(name, cx, y + 12);
   }
 
   function decorWindChime(c, a, t) {

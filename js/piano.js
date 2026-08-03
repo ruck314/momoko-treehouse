@@ -475,10 +475,11 @@
 
     /* Fallboard nameplate */
     c.fillStyle = PAL.sun;
-    c.font = 'bold 11px monospace';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    c.fillText('MOMOKO & FRIENDS', X0 + WHITE_W * 7, KEY_TOP - 10);
+    var plate = Game.i18n.t('title');
+    E.fitText(c, plate, 300, 11);
+    c.fillText(plate, X0 + WHITE_W * 7, KEY_TOP - 10);
 
     /* White keys */
     for (i = 0; i < whites.length; i++) {
