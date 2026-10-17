@@ -1032,12 +1032,15 @@
 
   function drawShopInterior(c) {
     t++;
+    /* Timber walls run out across the bezel on tablets; the shelves and
+       buttons stay in the viewport. */
     var g = c.createLinearGradient(0, 0, 0, H);
     g.addColorStop(0, '#6b4a2f');
     g.addColorStop(0.35, '#c9a86a');
     g.addColorStop(1, '#8a6340');
     c.fillStyle = g;
-    c.fillRect(0, 0, W, H);
+    c.fillRect(VIEW.x, VIEW.y, VIEW.w, VIEW.h);
+    clipGame(c);
 
     drawShopWall(c);
 
@@ -1732,11 +1735,14 @@
     var ext = Game.exterior;
     var tab = getExtTab(extTab);
 
-    var g = c.createLinearGradient(0, 0, 0, H);
+    /* Sky runs out across the bezel on tablets; the controls stay in
+       the viewport. */
+    var g = c.createLinearGradient(0, VIEW.y, 0, VIEW.y + VIEW.h);
     g.addColorStop(0, PAL.sky);
     g.addColorStop(1, '#dff0d8');
     c.fillStyle = g;
-    c.fillRect(0, 0, W, H);
+    c.fillRect(VIEW.x, VIEW.y, VIEW.w, VIEW.h);
+    clipGame(c);
 
     c.fillStyle = PAL.ink;
     c.font = 'bold 22px "M PLUS Rounded 1c", sans-serif';
