@@ -13,6 +13,27 @@
   var W = 800, H = 480;
   var t = 0;
 
+  /* The rectangle the ambient backdrops fill, in game coordinates. It is
+     the 800x480 viewport everywhere except on touch devices, where the
+     engine widens it to the whole canvas for the title, designer, intro
+     and victory screens so the meadow fills the bezel instead of a dark
+     frame. Everything else on those screens stays clipped to the
+     viewport via clipGame(). */
+  var VIEW = { x: 0, y: 0, w: W, h: H };
+  function setView(x, y, w, h) {
+    VIEW.x = x; VIEW.y = y; VIEW.w = w; VIEW.h = h;
+    E.setView(x, y, w, h);
+  }
+  function clipGame(c) { c.beginPath(); c.rect(0, 0, W, H); c.clip(); }
+  /* Grass from gy down to the bottom of the view, under the painted band. */
+  function fillViewGrass(c, gy) {
+    var gg = c.createLinearGradient(0, gy, 0, H);
+    gg.addColorStop(0, '#78bb51');
+    gg.addColorStop(1, '#5c9a3d');
+    c.fillStyle = gg;
+    c.fillRect(VIEW.x, gy, VIEW.w, VIEW.y + VIEW.h - gy);
+  }
+
   /* ================================================================
      Shared helpers
      ================================================================ */
@@ -200,6 +221,7 @@
     /* The same sky and far hills as the meadow, sun moved off the title. */
     E.drawMeadowSky(c, 640, t, TITLE_GROUND, Game.MEADOW.width, 724);
     drawTitleGround(c);
+    clipGame(c);
 
     /* A finished tree house, with Momoko and Lila out front */
     E.softShadow(c, 172, TITLE_GROUND + 8, 96, 7, 0.2);
@@ -271,15 +293,23 @@
   /* Grass band with tufts and flowers, painted once. */
   function drawTitleGround(c) {
     var gy = TITLE_GROUND, gh = H - gy;
-    var spr = E.getCachedSprite('titleGround', W, gh + 6, function (g) {
+    /* `flat` paints the same tufts and flowers on plain deep grass with
+       no top edge, for the rows tiled below the viewport on tablets, so
+       the bezel grass has no repeating seams. */
+    function paintGrass(g, flat) {
       var rnd = E.seeded(77);
-      var gr = g.createLinearGradient(0, 6, 0, gh + 6);
-      gr.addColorStop(0, '#78bb51');
-      gr.addColorStop(1, '#5c9a3d');
-      g.fillStyle = gr;
-      g.fillRect(0, 6, W, gh);
-      g.fillStyle = 'rgba(75, 132, 51, 0.55)';
-      g.fillRect(0, 6, W, 3);
+      if (flat) {
+        g.fillStyle = '#5c9a3d';
+        g.fillRect(0, 0, W, gh + 6);
+      } else {
+        var gr = g.createLinearGradient(0, 6, 0, gh + 6);
+        gr.addColorStop(0, '#78bb51');
+        gr.addColorStop(1, '#5c9a3d');
+        g.fillStyle = gr;
+        g.fillRect(0, 6, W, gh);
+        g.fillStyle = 'rgba(75, 132, 51, 0.55)';
+        g.fillRect(0, 6, W, 3);
+      }
       g.lineCap = 'round';
       for (var i = 0; i < 110; i++) {
         var x = rnd() * W, y = 14 + rnd() * (gh - 10);
@@ -303,8 +333,23 @@
         }
         E.fillEllipse(g, fx, fy, fr * 0.55, fr * 0.55, PAL.sun, false);
       }
-    });
-    c.drawImage(spr, 0, gy - 6, spr.lw, spr.lh);
+    }
+    var spr = E.getCachedSprite('titleGround', W, gh + 6, function (g) { paintGrass(g, false); });
+    /* Tile the band across (and below) the view so the grass runs on
+       under the bezel on tablets; inside the viewport this is one tile. */
+    fillViewGrass(c, gy);
+    var x1 = VIEW.x + VIEW.w, y1 = VIEW.y + VIEW.h;
+    for (var tx = Math.floor(VIEW.x / W) * W; tx < x1; tx += W) {
+      c.drawImage(spr, tx, gy - 6, spr.lw, spr.lh);
+    }
+    if (y1 > H) {
+      var deep = E.getCachedSprite('titleGroundDeep', W, gh + 6, function (g) { paintGrass(g, true); });
+      for (var ty = H; ty < y1; ty += deep.lh) {
+        for (var tx2 = Math.floor(VIEW.x / W) * W; tx2 < x1; tx2 += W) {
+          c.drawImage(deep, tx2, ty, deep.lw, deep.lh);
+        }
+      }
+    }
   }
 
   /* Two butterflies looping lazily over the grass. */
@@ -412,7 +457,8 @@
     g.addColorStop(0, '#f2e0c0');
     g.addColorStop(1, '#d8c39a');
     c.fillStyle = g;
-    c.fillRect(0, 0, W, H);
+    c.fillRect(VIEW.x, VIEW.y, VIEW.w, VIEW.h);
+    clipGame(c);
 
     drawIntroPicture(c);
 
@@ -644,7 +690,8 @@
     g.addColorStop(0, '#f4e6cd');
     g.addColorStop(1, '#e0cba5');
     c.fillStyle = g;
-    c.fillRect(0, 0, W, H);
+    c.fillRect(VIEW.x, VIEW.y, VIEW.w, VIEW.h);
+    clipGame(c);
 
     /* Header */
     c.fillStyle = PAL.ink;
@@ -2911,14 +2958,11 @@
     wg.addColorStop(0, 'rgba(255, 214, 150, 0.32)');
     wg.addColorStop(1, 'rgba(255, 214, 150, 0)');
     c.fillStyle = wg;
-    c.fillRect(0, 0, W, V.groundY);
-    var gg = c.createLinearGradient(0, V.groundY, 0, H);
-    gg.addColorStop(0, '#78bb51');
-    gg.addColorStop(1, '#5c9a3d');
-    c.fillStyle = gg;
-    c.fillRect(0, V.groundY, W, H - V.groundY);
+    c.fillRect(VIEW.x, VIEW.y, VIEW.w, V.groundY - VIEW.y);
+    fillViewGrass(c, V.groundY);
     c.fillStyle = 'rgba(75, 132, 51, 0.55)';
-    c.fillRect(0, V.groundY, W, 3);
+    c.fillRect(VIEW.x, V.groundY, VIEW.w, 3);
+    clipGame(c);
 
     var TR = V.tree;
     E.softShadow(c, TR.x, TR.groundY + 2, 130, 9, 0.22);
@@ -3018,6 +3062,7 @@
   }
 
   window.Game.ui = {
+    setView: setView,
     /* shared */
     button: button, hit: hit, panel: panel, multiline: multiline,
     FONT: FONT, pointerOver: pointerOver, fitFont: fitFont, layoutLines: layoutLines,

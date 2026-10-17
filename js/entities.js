@@ -411,6 +411,12 @@
      the same every visit. Farther layers move less, sit higher and fade
      toward the sky colour (atmospheric perspective). */
   var VIEW_W = 800;
+  /* The rectangle the sky painter fills. It is the 800x480 viewport
+     everywhere except on touch devices, where the engine widens it to the
+     whole canvas for the title, designer, intro and victory screens so the
+     meadow fills the bezel instead of a dark frame. */
+  var VIEW = { x: 0, y: 0, w: 800, h: 480 };
+  function setView(x, y, w, h) { VIEW.x = x; VIEW.y = y; VIEW.w = w; VIEW.h = h; }
   var FLOWER_COLORS = ['#ff9ec4', '#ffd24a', '#fff4dc', '#b06aa8', '#8fd0e8'];
   var RIDGES = [
     { par: 0.12, base: 262, amp: 40, ph: 1.7, fill: '#bfdccb', rim: '#d9ece0', tree: '#aacfba', treeS: 0.55 },
@@ -485,14 +491,14 @@
   }
 
   function drawMeadowSky(c, camX, t, groundY, worldW, sunX) {
-    var Wv = VIEW_W;
+    var vx0 = VIEW.x, vx1 = VIEW.x + VIEW.w, Wv = VIEW.w;
     var g = c.createLinearGradient(0, 0, 0, groundY);
     g.addColorStop(0, '#9cd4ea');
     g.addColorStop(0.5, PAL.sky);
     g.addColorStop(0.82, '#e4f3dc');
     g.addColorStop(1, '#f5f0d6');
     c.fillStyle = g;
-    c.fillRect(0, 0, Wv, groundY);
+    c.fillRect(vx0, VIEW.y, Wv, groundY - VIEW.y);
 
     /* Sun with a soft halo. It sits between the build HUD (left) and the
        bag (right), not behind them; the title screen moves it aside. */
@@ -508,7 +514,7 @@
     var wrap = Wv + 340;
     for (var i = 0; i < CLOUDS.length; i++) {
       var cl = CLOUDS[i];
-      var cx = ((t * cl.drift - camX * cl.par + cl.off) % wrap + wrap) % wrap - 170;
+      var cx = ((t * cl.drift - camX * cl.par + cl.off) % wrap + wrap) % wrap - 170 + vx0;
       drawSkyCloud(c, cx, cl.y, cl.s, cl.a);
     }
 
@@ -517,16 +523,16 @@
       var R = RIDGES[r];
       var off = camX * R.par;
       c.beginPath();
-      c.moveTo(0, groundY);
-      for (var sx = 0; sx <= Wv; sx += 10) c.lineTo(sx, ridgeY(R, sx + off));
-      c.lineTo(Wv, groundY);
+      c.moveTo(vx0, groundY);
+      for (var sx = vx0; sx <= vx1; sx += 10) c.lineTo(sx, ridgeY(R, sx + off));
+      c.lineTo(vx1, groundY);
       c.closePath();
       c.fillStyle = R.fill;
       c.fill();
       /* rim light along the crest */
       c.beginPath();
-      for (var rx = 0; rx <= Wv; rx += 10) {
-        if (rx === 0) c.moveTo(rx, ridgeY(R, rx + off) + 1.5);
+      for (var rx = vx0; rx <= vx1; rx += 10) {
+        if (rx === vx0) c.moveTo(rx, ridgeY(R, rx + off) + 1.5);
         else c.lineTo(rx, ridgeY(R, rx + off) + 1.5);
       }
       c.strokeStyle = R.rim;
@@ -535,7 +541,7 @@
       var trees = ridgeTrees[r];
       for (var k = 0; k < trees.length; k++) {
         var tx = trees[k].x - off;
-        if (tx < -30 || tx > Wv + 30) continue;
+        if (tx < vx0 - 30 || tx > vx1 + 30) continue;
         drawRidgeTree(c, tx, ridgeY(R, trees[k].x) + 3, R.treeS * trees[k].s, trees[k].pine, R.tree);
       }
     }
@@ -544,7 +550,7 @@
     hz.addColorStop(0, 'rgba(245, 240, 214, 0)');
     hz.addColorStop(1, 'rgba(245, 240, 214, 0.28)');
     c.fillStyle = hz;
-    c.fillRect(0, groundY - 70, Wv, 70);
+    c.fillRect(vx0, groundY - 70, Wv, 70);
   }
 
   /* ---- Foreground: grass band, dirt path, tufts and little flowers ----
@@ -1123,6 +1129,7 @@
   };
 
   window.Game.entities = {
+    setView: setView,
     getCachedSprite: getCachedSprite,
     clearSpriteCache: clearSpriteCache,
     ink: ink,

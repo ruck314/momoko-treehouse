@@ -2,7 +2,7 @@
    A new CACHE_NAME forces the activate handler to purge the old cache, so
    returning visitors pick up the new bundle on their next page load. */
 var CACHE_PREFIX = 'momoko-treehouse-';
-var CACHE_NAME = CACHE_PREFIX + 'v1.5.0';
+var CACHE_NAME = CACHE_PREFIX + 'v1.6.0';
 /* Every game on ruck314.github.io shares one Cache Storage, so only purge
    this game's own caches -- never the other games' offline copies. */
 function isOwnCache(n) {

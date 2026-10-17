@@ -13,7 +13,7 @@
   var GAME_X = 0, GAME_Y = 0;
 
   /* Bump alongside CACHE_NAME in sw.js and tag the matching git release. */
-  Game.VERSION = 'v1.5.0';
+  Game.VERSION = 'v1.6.0';
 
   var canvas, ctx;
 
@@ -220,8 +220,10 @@
       leftW += extra; rightW += extra;
       CANVAS_H = H; GAME_Y = 0;
     } else {
-      /* Taller than needed (iPad): add top/bottom bezel. */
-      CANVAS_H = Math.min(760, Math.round((W + leftW + rightW) / Math.max(0.5, aspect)));
+      /* Taller than needed (iPad): add top/bottom bezel. The cap only
+         guards against absurd aspects; a 760 cap left letterbox bars
+         above and below the canvas on every iPad. */
+      CANVAS_H = Math.min(H * 2, Math.round((W + leftW + rightW) / Math.max(0.5, aspect)));
       GAME_Y = Math.floor((CANVAS_H - H) / 2);
     }
     CANVAS_W = W + leftW + rightW;
@@ -560,14 +562,27 @@
                      Math.min(3, window.devicePixelRatio || 1), 0, 0);
     ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
 
-    if (GAME_X > 0 || GAME_Y > 0) {
+    /* Menu screens have no touch controls, so on a tablet they paint
+       their own meadow across the whole canvas instead of sitting in a
+       dark frame. Gameplay keeps the bezel so the D-pad has a quiet
+       backdrop. */
+    var bezel = GAME_X > 0 || GAME_Y > 0;
+    var fullBleed = bezel && (
+      state === State.TITLE || state === State.CUSTOMIZE ||
+      state === State.INTRO || state === State.VICTORY);
+    if (bezel && !fullBleed) {
       Game.input.drawTouchStrip(ctx, showTouchButtons());
     }
 
     ctx.translate(GAME_X, GAME_Y);
-    ctx.beginPath();
-    ctx.rect(0, 0, W, H);
-    ctx.clip();
+    if (fullBleed) {
+      Game.ui.setView(-GAME_X, -GAME_Y, CANVAS_W, CANVAS_H);
+    } else {
+      Game.ui.setView(0, 0, W, H);
+      ctx.beginPath();
+      ctx.rect(0, 0, W, H);
+      ctx.clip();
+    }
     Game.ui.beginFrame();
     if (state !== renderedState) {
       Game.ui.dropStaleToast();
