@@ -322,11 +322,17 @@
   /* ---- Drawing ---- */
   function draw(c) {
     /* Music-room backdrop so it reads as sitting down at the piano. */
-    var g = c.createLinearGradient(0, 0, 0, H);
+    var V = Game.ui.VIEW || { x: 0, y: 0, w: W, h: H };
+    var g = c.createLinearGradient(0, V.y, 0, V.y + V.h);
     g.addColorStop(0, '#dfe4f2');
     g.addColorStop(1, '#8f93b8');
     c.fillStyle = g;
-    c.fillRect(0, 0, W, H);
+    c.fillRect(V.x, V.y, V.w, V.h);
+    /* The wall runs out across the bezel on tablets; the keys and
+       buttons stay in the viewport. */
+    c.beginPath();
+    c.rect(0, 0, W, H);
+    c.clip();
 
     drawTopBar(c);
     drawSongStrip(c);

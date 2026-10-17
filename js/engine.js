@@ -13,7 +13,7 @@
   var GAME_X = 0, GAME_Y = 0;
 
   /* Bump alongside CACHE_NAME in sw.js and tag the matching git release. */
-  Game.VERSION = 'v1.8.0';
+  Game.VERSION = 'v1.9.0';
 
   var canvas, ctx;
 
@@ -583,7 +583,8 @@
     var fullBleed = bezel && (
       state === State.TITLE || state === State.CUSTOMIZE ||
       state === State.INTRO || state === State.VICTORY ||
-      state === State.SHOP_INTERIOR || state === State.EXTERIOR);
+      state === State.SHOP_INTERIOR || state === State.EXTERIOR ||
+      state === State.PIANO);
     /* Pause and game-over dim the whole screen, bezel included, so the
        menu floats over the frozen game instead of a bright island. */
     var dimAll = bezel && (

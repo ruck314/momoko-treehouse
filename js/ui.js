@@ -3069,6 +3069,7 @@
 
   window.Game.ui = {
     setView: setView,
+    VIEW: VIEW,
     /* shared */
     button: button, hit: hit, panel: panel, multiline: multiline,
     FONT: FONT, pointerOver: pointerOver, fitFont: fitFont, layoutLines: layoutLines,
