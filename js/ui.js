@@ -206,8 +206,8 @@
   var TITLE_BTN = {
     play: { x: TITLE_CX - 100, y: 250, w: 200, h: 50 },
     how: { x: TITLE_CX - 100, y: 312, w: 200, h: 40 },
-    lang: { x: TITLE_CX - 100, y: 362, w: 95, h: 36 },
-    sound: { x: TITLE_CX + 5, y: 362, w: 95, h: 36 },
+    lang: { x: TITLE_CX - 100, y: 362, w: 95, h: 40 },
+    sound: { x: TITLE_CX + 5, y: 362, w: 95, h: 40 },
     reset: { x: 640, y: 418, w: 146, h: 34 },
   };
   var showInstructions = false;
@@ -233,10 +233,12 @@
     c.restore();
     var lila = Game.FRIEND_DEFS[0];
     var hop = Math.max(0, Math.sin(t / 22)) * 6;
-    E.softShadow(c, 300, 450, 20, 4, 0.22);
-    E.drawCharacter(c, 300, 450, Game.customization, 0, -1, 1.25, (t % 220) < 8, hop);
-    E.softShadow(c, 46, 452, 18, 4, 0.22);
-    E.drawCharacter(c, 46, 452, Game.friends && Game.friends[lila.id] ? Game.friends[lila.id].cust : lila.defaultCust,
+    /* Both stand just in front of the tree, on the same patch of grass. */
+    var feetY = TITLE_GROUND + 22;
+    E.softShadow(c, 300, feetY, 20, 4, 0.22);
+    E.drawCharacter(c, 300, feetY, Game.customization, 0, -1, 1.25, (t % 220) < 8, hop);
+    E.softShadow(c, 46, feetY, 18, 4, 0.22);
+    E.drawCharacter(c, 46, feetY, Game.friends && Game.friends[lila.id] ? Game.friends[lila.id].cust : lila.defaultCust,
       0, 1, 1.1, (t % 260) < 8);
     drawButterflies(c);
 
@@ -287,16 +289,16 @@
 
     button(c, TITLE_BTN.play, T('play'), { font: 22, activeFill: PAL.sun, fill: PAL.sun, r: 12 });
     button(c, TITLE_BTN.how, T('howToPlay'), { font: 15 });
-    button(c, TITLE_BTN.lang, T('language') + ': ' + T('langLabel'), { font: 12 });
-    button(c, TITLE_BTN.sound, Game.audio.isMuted() ? T('soundOff') : T('soundOn'), { font: 12 });
+    button(c, TITLE_BTN.lang, T('language') + ': ' + T('langLabel'), { font: 14 });
+    button(c, TITLE_BTN.sound, Game.audio.isMuted() ? T('soundOff') : T('soundOn'), { font: 14 });
     if (hasSave()) button(c, TITLE_BTN.reset, T('startOver'), { font: 12, fill: 'rgba(255,244,220,0.7)' });
 
     drawVersionStamp(c);
   }
 
   /* Grass band with tufts and flowers, painted once. */
-  function drawTitleGround(c) {
-    var gy = TITLE_GROUND, gh = H - gy;
+  function drawTitleGround(c, groundY) {
+    var gy = groundY || TITLE_GROUND, gh = H - TITLE_GROUND;
     /* `flat` paints the same tufts and flowers on plain deep grass with
        no top edge, for the rows tiled below the viewport on tablets, so
        the bezel grass has no repeating seams. */
@@ -356,13 +358,14 @@
     }
   }
 
-  /* Two butterflies looping lazily over the grass. */
+  /* Two butterflies looping lazily over the grass, one either side of Momoko,
+     clear of the button column. */
   function drawButterflies(c) {
     var cols = [PAL.peach, PAL.sky];
     for (var i = 0; i < 2; i++) {
       var k = t / (150 + i * 40) + i * 2.4;
-      var x = 360 + i * 300 + Math.sin(k) * 70;
-      var y = 380 + Math.sin(k * 2.3) * 22 - i * 14;
+      var x = 366 - i * 134 + Math.sin(k) * (40 - i * 18);
+      var y = 384 + Math.sin(k * 2.3) * (22 - i * 10) + i * 8;
       var flap = Math.abs(Math.sin(t / 4 + i));
       c.save();
       c.translate(x, y);
@@ -432,15 +435,17 @@
 
   function drawVersionStamp(c) {
     c.save();
+    /* In the corner of the screen, not of the viewport, on tablets. */
+    var rx = VIEW.x + VIEW.w, by = VIEW.y + VIEW.h;
     c.font = '11px "M PLUS Rounded 1c", sans-serif';
     var vw = c.measureText(Game.VERSION || '').width + 12;
     c.fillStyle = 'rgba(255, 244, 220, 0.6)';
-    E.roundRect(c, W - 2 - vw, H - 20, vw, 16, 8);
+    E.roundRect(c, rx - 2 - vw, by - 20, vw, 16, 8);
     c.fill();
     c.fillStyle = 'rgba(74, 51, 32, 0.6)';
     c.textAlign = 'right';
     c.textBaseline = 'bottom';
-    c.fillText(Game.VERSION || '', W - 8, H - 6);
+    c.fillText(Game.VERSION || '', rx - 8, by - 6);
     c.restore();
   }
 
@@ -1431,6 +1436,16 @@
     c.font = 'bold 12px "M PLUS Rounded 1c", sans-serif';
     c.fillStyle = 'rgba(74,51,32,0.75)';
     c.fillText(T('buildNext'), px + 12, py + 15);
+    /* One pip per stage along the top right: how far along the house is. */
+    var nStages = Game.BUILD_STAGES.length, done = Game.build.stageIndex;
+    for (var si = 0; si < nStages; si++) {
+      var pcx = px + pw - 14 - (nStages - 1 - si) * 13, pcy = py + 15;
+      c.beginPath();
+      c.arc(pcx, pcy, 4.5, 0, Math.PI * 2);
+      c.fillStyle = si < done ? PAL.leafLight : (si === done ? PAL.sun : 'rgba(74,51,32,0.14)');
+      c.fill();
+      E.ink(c, 1.2);
+    }
     fitFont(c, T('stage_' + stage.id), pw - 24, 15, 'bold');
     c.fillStyle = PAL.ink;
     c.fillText(T('stage_' + stage.id), px + 12, py + 33);
@@ -1452,7 +1467,8 @@
     var n = Game.bag.MAX;
     var size = 34, gap = 6;
     var totalW = n * size + (n - 1) * gap;
-    var x0 = W - totalW - 16, y0 = 12;
+    /* Panel top lines up with the build HUD's on the left. */
+    var x0 = W - totalW - 16, y0 = 18;
     c.save();
     c.globalAlpha = 0.9;
     c.fillStyle = 'rgba(255,244,220,0.8)';
@@ -1735,13 +1751,10 @@
     var ext = Game.exterior;
     var tab = getExtTab(extTab);
 
-    /* Sky runs out across the bezel on tablets; the controls stay in
-       the viewport. */
-    var g = c.createLinearGradient(0, VIEW.y, 0, VIEW.y + VIEW.h);
-    g.addColorStop(0, PAL.sky);
-    g.addColorStop(1, '#dff0d8');
-    c.fillStyle = g;
-    c.fillRect(VIEW.x, VIEW.y, VIEW.w, VIEW.h);
+    /* The same meadow as the character designer, out across the bezel
+       on tablets; the controls stay in the viewport. */
+    E.drawMeadowSky(c, 640, t, TITLE_GROUND, Game.MEADOW.width, 724);
+    drawTitleGround(c);
     clipGame(c);
 
     c.fillStyle = PAL.ink;
@@ -2960,14 +2973,12 @@
     var V = VICTORY;
     E.drawMeadowSky(c, 1500, t, V.groundY, Game.MEADOW.width);
     /* late-afternoon warmth over the sky */
-    var wg = c.createLinearGradient(0, 0, 0, V.groundY);
+    var wg = c.createLinearGradient(0, VIEW.y, 0, V.groundY);
     wg.addColorStop(0, 'rgba(255, 214, 150, 0.32)');
     wg.addColorStop(1, 'rgba(255, 214, 150, 0)');
     c.fillStyle = wg;
     c.fillRect(VIEW.x, VIEW.y, VIEW.w, V.groundY - VIEW.y);
-    fillViewGrass(c, V.groundY);
-    c.fillStyle = 'rgba(75, 132, 51, 0.55)';
-    c.fillRect(VIEW.x, V.groundY, VIEW.w, 3);
+    drawTitleGround(c, V.groundY);
     clipGame(c);
 
     var TR = V.tree;

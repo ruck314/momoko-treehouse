@@ -475,6 +475,14 @@
     out.sort(function (p, q) { return p.par - q.par; });
     return out;
   })();
+  /* Extra clouds for the tall sky above the viewport on tablet menus,
+     placed as a fraction of that band's height so they always fit it. */
+  var HIGH_CLOUDS = [
+    { f: 0.78, s: 1.15, a: 0.95, drift: 0.12, off: 120 },
+    { f: 0.42, s: 0.8, a: 0.85, drift: 0.08, off: 640 },
+    { f: 0.62, s: 0.62, a: 0.75, drift: 0.05, off: 980 },
+    { f: 0.3, s: 1.0, a: 0.9, drift: 0.1, off: 1420 },
+  ];
 
   function drawSkyCloud(c, x, y, s, a) {
     c.save();
@@ -499,6 +507,15 @@
     g.addColorStop(1, '#f5f0d6');
     c.fillStyle = g;
     c.fillRect(vx0, VIEW.y, Wv, groundY - VIEW.y);
+    /* On tablets the sky runs on above the viewport: deepen it towards
+       the top so that band reads as open sky, not a blank wall. */
+    if (VIEW.y < 0) {
+      var tg = c.createLinearGradient(0, VIEW.y, 0, 0);
+      tg.addColorStop(0, '#7dc2e0');
+      tg.addColorStop(1, '#9cd4ea');
+      c.fillStyle = tg;
+      c.fillRect(vx0, VIEW.y, Wv, -VIEW.y);
+    }
 
     /* Sun with a soft halo. It sits between the build HUD (left) and the
        bag (right), not behind them; the title screen moves it aside. */
@@ -516,6 +533,32 @@
       var cl = CLOUDS[i];
       var cx = ((t * cl.drift - camX * cl.par + cl.off) % wrap + wrap) % wrap - 170 + vx0;
       drawSkyCloud(c, cx, cl.y, cl.s, cl.a);
+    }
+    if (VIEW.y < -60) {
+      for (var h = 0; h < HIGH_CLOUDS.length; h++) {
+        var hc = HIGH_CLOUDS[h];
+        var hx = ((t * hc.drift + hc.off) % wrap + wrap) % wrap - 170 + vx0;
+        drawSkyCloud(c, hx, VIEW.y * hc.f, hc.s, hc.a);
+      }
+      /* a little flock gliding across the top */
+      var bx = ((t * 0.35 + 300) % wrap + wrap) % wrap - 170 + vx0;
+      var by = VIEW.y * 0.55 + Math.sin(t / 70) * 6;
+      c.save();
+      c.strokeStyle = 'rgba(74, 51, 32, 0.55)';
+      c.lineWidth = 1.8;
+      c.lineCap = 'round';
+      c.lineJoin = 'round';
+      var FLOCK = [[0, 0], [-22, 10], [-16, -12], [-40, 2]];
+      for (var b = 0; b < FLOCK.length; b++) {
+        var wing = 3 + Math.sin(t / 7 + b * 1.7) * 3;
+        var fx = bx + FLOCK[b][0], fy = by + FLOCK[b][1];
+        c.beginPath();
+        c.moveTo(fx - 7, fy - wing);
+        c.quadraticCurveTo(fx - 3, fy - wing * 0.4, fx, fy);
+        c.quadraticCurveTo(fx + 3, fy - wing * 0.4, fx + 7, fy - wing);
+        c.stroke();
+      }
+      c.restore();
     }
 
     if (!ridgeTrees) buildRidgeTrees(worldW || 2600);
