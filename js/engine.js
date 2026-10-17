@@ -13,7 +13,7 @@
   var GAME_X = 0, GAME_Y = 0;
 
   /* Bump alongside CACHE_NAME in sw.js and tag the matching git release. */
-  Game.VERSION = 'v1.6.0';
+  Game.VERSION = 'v1.7.0';
 
   var canvas, ctx;
 
@@ -556,6 +556,19 @@
   }
 
   /* ---- Render ---- */
+  /* Runs fn with drawing clipped to the game viewport. The overlay
+     states (pause, game over) widen the view to the whole canvas on
+     tablets so their scrim covers the bezel too; the frozen scene under
+     the menu still has to stay inside the 800x480 window. */
+  function drawClipped(fn) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, W, H);
+    ctx.clip();
+    fn();
+    ctx.restore();
+  }
+
   function render() {
     ctx.save();
     ctx.setTransform(Math.min(3, window.devicePixelRatio || 1), 0, 0,
@@ -570,12 +583,16 @@
     var fullBleed = bezel && (
       state === State.TITLE || state === State.CUSTOMIZE ||
       state === State.INTRO || state === State.VICTORY);
+    /* Pause and game-over dim the whole screen, bezel included, so the
+       menu floats over the frozen game instead of a bright island. */
+    var dimAll = bezel && (
+      state === State.PAUSED);
     if (bezel && !fullBleed) {
       Game.input.drawTouchStrip(ctx, showTouchButtons());
     }
 
     ctx.translate(GAME_X, GAME_Y);
-    if (fullBleed) {
+    if (fullBleed || dimAll) {
       Game.ui.setView(-GAME_X, -GAME_Y, CANVAS_W, CANVAS_H);
     } else {
       Game.ui.setView(0, 0, W, H);
@@ -594,7 +611,7 @@
       case State.CUSTOMIZE: Game.ui.drawCustomizeScreen(ctx); Game.ui.drawToast(ctx); break;
       case State.INTRO: Game.ui.drawIntroScreen(ctx); break;
       case State.PLAYING: drawWorld(ctx); break;
-      case State.PAUSED: drawWorld(ctx); Game.ui.drawPauseMenu(ctx); break;
+      case State.PAUSED: drawClipped(function () { drawWorld(ctx); }); Game.ui.drawPauseMenu(ctx); break;
       case State.SHOP_INTERIOR: Game.ui.drawShopInterior(ctx); Game.ui.drawToast(ctx); break;
       case State.BUILD_CUTSCENE: drawWorld(ctx); Game.ui.drawBuildCutsceneOverlay(ctx); break;
       case State.EXTERIOR: Game.ui.drawExteriorScreen(ctx); break;

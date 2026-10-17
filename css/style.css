@@ -31,15 +31,20 @@ html, body {
   top: 8px;
   left: 8px;
   z-index: 10000;
-  color: #ffd24a;
-  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
   font-family: "M PLUS Rounded 1c", sans-serif;
   font-size: 14px;
-  padding: 6px 10px;
-  background: rgba(36, 23, 8, 0.72);
+  font-weight: bold;
+  color: #ffd24a;
+  background: rgba(36, 23, 8, 0.85);
   border: 1px solid #7bc45a;
   border-radius: 6px;
+  text-decoration: none;
   pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Only shown on the title and pause screens (engine.js toggles the
@@ -48,9 +53,27 @@ html, body {
   display: none;
 }
 
-#game-center-link:hover {
-  background: rgba(74, 107, 52, 0.92);
+#game-center-link:hover,
+#game-center-link:focus {
   color: #ffffff;
+  background: rgba(74, 107, 52, 0.95);
+  border-color: #a8dd7a;
+  outline: none;
+}
+
+#game-center-link .gcl-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* Hide the label on very narrow screens where space is tight */
+@media (max-width: 480px) {
+  #game-center-link .gcl-text {
+    display: none;
+  }
+  #game-center-link {
+    padding: 5px 7px;
+  }
 }
 
 /* Orientation hint for portrait phones/tablets */

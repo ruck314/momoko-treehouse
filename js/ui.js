@@ -221,6 +221,7 @@
     /* The same sky and far hills as the meadow, sun moved off the title. */
     E.drawMeadowSky(c, 640, t, TITLE_GROUND, Game.MEADOW.width, 724);
     drawTitleGround(c);
+    c.save();
     clipGame(c);
 
     /* A finished tree house, with Momoko and Lila out front */
@@ -267,6 +268,9 @@
     c.fill();
     c.fillStyle = '#5a7a3a';
     c.fillText(T('titleSubtitle'), TITLE_CX, 214 + bob);
+    c.restore();
+    /* Pop the viewport clip so the overlays below can dim the whole
+       tablet screen, bezel included. */
     c.restore();
 
     if (confirmReset) {
@@ -383,7 +387,7 @@
     /* Click anywhere closes it. */
     pointerOver(c, 0, 0, W, H);
     c.fillStyle = 'rgba(36, 23, 8, 0.72)';
-    c.fillRect(0, 0, W, H);
+    c.fillRect(VIEW.x, VIEW.y, VIEW.w, VIEW.h);
     panel(c, 110, 100, 580, 280, PAL.cream);
     c.fillStyle = PAL.ink;
     c.font = 'bold 20px "M PLUS Rounded 1c", sans-serif';
@@ -397,7 +401,7 @@
 
   function drawResetConfirm(c) {
     c.fillStyle = 'rgba(36, 23, 8, 0.72)';
-    c.fillRect(0, 0, W, H);
+    c.fillRect(VIEW.x, VIEW.y, VIEW.w, VIEW.h);
     panel(c, 200, 190, 400, 180, PAL.cream);
     c.fillStyle = PAL.ink;
     c.font = 'bold 16px "M PLUS Rounded 1c", sans-serif';
@@ -453,11 +457,9 @@
 
   function drawIntroScreen(c) {
     t++;
-    var g = c.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, '#f2e0c0');
-    g.addColorStop(1, '#d8c39a');
-    c.fillStyle = g;
-    c.fillRect(VIEW.x, VIEW.y, VIEW.w, VIEW.h);
+    /* The same meadow as the title so the menus read as one place. */
+    E.drawMeadowSky(c, 640, t, TITLE_GROUND, Game.MEADOW.width, 724);
+    drawTitleGround(c);
     clipGame(c);
 
     drawIntroPicture(c);
@@ -686,11 +688,9 @@
     var tab = getTab(customTab);
     var roster = designRoster();
 
-    var g = c.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, '#f4e6cd');
-    g.addColorStop(1, '#e0cba5');
-    c.fillStyle = g;
-    c.fillRect(VIEW.x, VIEW.y, VIEW.w, VIEW.h);
+    /* The same meadow as the title so the menus read as one place. */
+    E.drawMeadowSky(c, 640, t, TITLE_GROUND, Game.MEADOW.width, 724);
+    drawTitleGround(c);
     clipGame(c);
 
     /* Header */
@@ -2902,7 +2902,7 @@
 
   function drawPauseMenu(c) {
     c.fillStyle = 'rgba(36, 23, 8, 0.66)';
-    c.fillRect(0, 0, W, H);
+    c.fillRect(VIEW.x, VIEW.y, VIEW.w, VIEW.h);
     panel(c, 250, 120, 300, 290);
     c.fillStyle = PAL.ink;
     c.font = 'bold 24px "M PLUS Rounded 1c", sans-serif';

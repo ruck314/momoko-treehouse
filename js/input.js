@@ -17,6 +17,10 @@
   var kb = { left: false, right: false, up: false, down: false, action: false, pause: false };
   var justPressed = { action: false, pause: false };
   var prevKeys = { action: false, pause: false };
+  /* A key tapped and released between two frames would never be seen
+     by the per-frame edge detect in update(), so keydown latches it
+     here until the next update() consumes it. */
+  var tapped = { action: false, pause: false };
 
   /* Touch state – each touch: { x, y, button } where button is a sticky binding
      so a finger that lands on a direction button keeps that button pressed
@@ -92,7 +96,7 @@
   /* ---- Keyboard ---- */
   function onKeyDown(e) {
     if (keyCapture) {
-      if (e.code === 'Escape') { kb.pause = true; return; }
+      if (e.code === 'Escape') { if (!kb.pause) tapped.pause = true; kb.pause = true; return; }
       if (heldCodes[e.code]) { e.preventDefault(); return; }  /* swallow auto-repeat */
       heldCodes[e.code] = true;
       if (keyCapture(true, e.code)) e.preventDefault();
@@ -103,8 +107,8 @@
       case 'ArrowRight': case 'KeyD': kb.right = true; break;
       case 'ArrowUp': case 'KeyW': kb.up = true; break;
       case 'ArrowDown': case 'KeyS': kb.down = true; break;
-      case 'Space': case 'KeyZ': kb.action = true; e.preventDefault(); break;
-      case 'Escape': case 'KeyP': kb.pause = true; break;
+      case 'Space': case 'KeyZ': if (!kb.action) tapped.action = true; kb.action = true; e.preventDefault(); break;
+      case 'Escape': case 'KeyP': if (!kb.pause) tapped.pause = true; kb.pause = true; break;
     }
   }
 
@@ -314,10 +318,12 @@
 
   /* Call once per frame before reading keys */
   function update() {
-    justPressed.action = keys.action && !prevKeys.action;
-    justPressed.pause = keys.pause && !prevKeys.pause;
+    justPressed.action = (keys.action && !prevKeys.action) || tapped.action;
+    justPressed.pause = (keys.pause && !prevKeys.pause) || tapped.pause;
     prevKeys.action = keys.action;
     prevKeys.pause = keys.pause;
+    tapped.action = false;
+    tapped.pause = false;
   }
 
   function refreshLayout() {
