@@ -511,5 +511,14 @@
     getLang: function () { return lang; },
     setLang: function (l) { if (strings[l]) lang = l; },
     toggle: function () { lang = (lang === 'en') ? 'ja' : 'en'; return lang; },
+    /* Every string in every language, so the UI font's Japanese subsets
+       can be fetched up front instead of popping in mid-game. */
+    allText: function () {
+      var out = '';
+      for (var l in strings) {
+        for (var k in strings[l]) out += strings[l][k];
+      }
+      return out;
+    },
   };
 })();

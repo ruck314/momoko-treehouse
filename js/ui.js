@@ -17,19 +17,103 @@
      Shared helpers
      ================================================================ */
 
+  var FONT = '"M PLUS Rounded 1c", sans-serif';
+
+  /* True when the mouse is over the rect, in whatever coordinate space
+     the caller is currently drawing in (the pointer is stored in
+     backing-store pixels and mapped back through the live transform). */
+  var anyHot = false;
+  function pointerOver(c, x, y, w, h) {
+    var p = Game.input && Game.input.pointer;
+    if (!p || p.px < 0 || !c.getTransform) return false;
+    var pt = c.getTransform().inverse().transformPoint(new DOMPoint(p.px, p.py));
+    var over = pt.x >= x && pt.x <= x + w && pt.y >= y && pt.y <= y + h;
+    if (over) anyHot = true;
+    return over;
+  }
+
+  /* Shrink the font until text fits maxW, stopping at `min` (default 8). */
+  function fitFont(c, text, maxW, size, weight, min) {
+    min = min || 8;
+    while (true) {
+      c.font = (weight ? weight + ' ' : '') + size + 'px ' + FONT;
+      if (size <= min || c.measureText(text).width <= maxW) break;
+      size--;
+    }
+  }
+
+  /* Rounded, glossy button with a drop shadow and hover / press feedback.
+     Colours stay the warm cream / wood / sun palette set by `opts`. */
   function button(c, b, label, opts) {
     opts = opts || {};
     var fill = opts.active ? (opts.activeFill || PAL.sun) : (opts.fill || PAL.cream);
     if (opts.disabled) fill = '#b9ad99';
+    var r = opts.r === undefined ? 9 : opts.r;
+    var hot = !opts.disabled && pointerOver(c, b.x, b.y, b.w, b.h);
+    var pressed = hot && Game.input.pointer.down;
+    var oy = pressed ? 2 : 0;
+    c.save();
+    if (!pressed) {
+      c.fillStyle = 'rgba(36, 23, 8, 0.28)';
+      E.roundRect(c, b.x, b.y + 3, b.w, b.h, r);
+      c.fill();
+    }
     c.fillStyle = fill;
-    E.roundRect(c, b.x, b.y, b.w, b.h, opts.r === undefined ? 9 : opts.r);
+    E.roundRect(c, b.x, b.y + oy, b.w, b.h, r);
     c.fill();
-    E.ink(c, opts.active ? 3 : 2);
+    if (hot) {
+      c.fillStyle = 'rgba(255, 255, 255, 0.28)';
+      c.fill();
+    }
+    /* Soft top gloss */
+    c.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    E.roundRect(c, b.x + 3, b.y + oy + 2, b.w - 6, b.h * 0.42, Math.max(2, r - 3));
+    c.fill();
+    E.roundRect(c, b.x, b.y + oy, b.w, b.h, r);
+    E.ink(c, opts.active || hot ? 3 : 2);
     c.fillStyle = opts.disabled ? '#6d6459' : PAL.ink;
-    c.font = 'bold ' + (opts.font || 15) + 'px monospace';
+    fitFont(c, label, b.w - 12, opts.font || 15, 'bold');
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    c.fillText(label, b.x + b.w / 2, b.y + b.h / 2 + 1);
+    c.fillText(label, b.x + b.w / 2, b.y + oy + b.h / 2 + 1);
+    c.restore();
+  }
+
+  /* Hover tint for selectable tiles (grid cells, swatches, portraits). */
+  function tileFill(c, r, sel, hotFill, baseFill) {
+    var hot = !sel && pointerOver(c, r.x, r.y, r.w, r.h);
+    return sel ? PAL.sun : (hot ? hotFill : baseFill);
+  }
+
+  /* Split text into lines that fit maxWidth. Breaks on spaces and \n, and
+     falls back to per-character breaks for runs with no spaces (Japanese). */
+  function layoutLines(c, text, maxWidth) {
+    var out = [];
+    var paras = String(text).split('\n');
+    for (var li = 0; li < paras.length; li++) {
+      var words = paras[li].split(' ');
+      var line = '';
+      for (var i = 0; i < words.length; i++) {
+        var word = words[i];
+        var test = line ? line + ' ' + word : word;
+        if (c.measureText(test).width <= maxWidth) { line = test; continue; }
+        if (line) { out.push(line); line = ''; }
+        /* Word alone is too wide: break it character by character. */
+        while (c.measureText(word).width > maxWidth && word.length > 1) {
+          var n = word.length - 1;
+          while (n > 1 && c.measureText(word.slice(0, n)).width > maxWidth) n--;
+          /* Don't start a line with closing punctuation, or end one with
+             an opening bracket. */
+          while (n > 1 && ('、。！？」）ー'.indexOf(word.charAt(n)) >= 0 ||
+                           '「（'.indexOf(word.charAt(n - 1)) >= 0)) n--;
+          out.push(word.slice(0, n));
+          word = word.slice(n);
+        }
+        line = word;
+      }
+      out.push(line);
+    }
+    return out;
   }
 
   function hit(b, mx, my) {
@@ -61,11 +145,19 @@
   function T(k) { return Game.i18n.t(k); }
 
   /* ---- Toast (transient message over gameplay) ---- */
-  var toast = { text: '', timer: 0 };
+  var toast = { text: '', timer: 0, fresh: false };
   function showToast(text, frames) {
     toast.text = text;
     toast.timer = frames || 120;
+    toast.fresh = true;
   }
+  /* Called by the engine whenever the screen changes. A toast raised by
+     the action that changed the screen survives; an older one (e.g. a
+     "bag full" from the shop) must not follow her out into the meadow. */
+  function dropStaleToast() {
+    if (!toast.fresh) toast.timer = 0;
+  }
+  function endFrame() { toast.fresh = false; }
   function drawToast(c) {
     if (toast.timer <= 0) return;
     toast.timer--;
@@ -73,7 +165,7 @@
     var lines = toast.text.split('\n');
     c.save();
     c.globalAlpha = a;
-    c.font = 'bold 16px monospace';
+    c.font = 'bold 16px "M PLUS Rounded 1c", sans-serif';
     var maxW = 0;
     for (var i = 0; i < lines.length; i++) maxW = Math.max(maxW, c.measureText(lines[i]).width);
     var bw = maxW + 40, bh = lines.length * 22 + 22;
@@ -134,21 +226,28 @@
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     c.fillStyle = PAL.ink;
-    c.font = 'bold 30px monospace';
+    c.font = 'bold 30px "M PLUS Rounded 1c", sans-serif';
     c.fillText(T('title'), W / 2 + 60, 108 + bob);
-    c.font = 'bold 52px monospace';
+    c.font = 'bold 52px "M PLUS Rounded 1c", sans-serif';
     c.fillStyle = '#3b6b2a';
     c.strokeStyle = PAL.cream;
     c.lineWidth = 6;
     c.lineJoin = 'round';
     c.strokeText(T('title2'), W / 2 + 60, 158 + bob);
     c.fillText(T('title2'), W / 2 + 60, 158 + bob);
-    c.font = '16px monospace';
+    c.font = '16px "M PLUS Rounded 1c", sans-serif';
     c.fillStyle = PAL.ink;
     c.fillText(T('titleSubtitle'), W / 2 + 60, 198 + bob);
 
     if (confirmReset) {
       drawResetConfirm(c);
+      return;
+    }
+    /* The buttons aren't clickable under the How to Play card, so don't
+       paint them there either. */
+    if (showInstructions) {
+      drawInstructionsOverlay(c);
+      drawVersionStamp(c);
       return;
     }
 
@@ -158,7 +257,6 @@
     button(c, TITLE_BTN.sound, Game.audio.isMuted() ? T('soundOff') : T('soundOn'), { font: 12 });
     if (hasSave()) button(c, TITLE_BTN.reset, T('startOver'), { font: 12, fill: 'rgba(255,244,220,0.7)' });
 
-    if (showInstructions) drawInstructionsOverlay(c);
     drawVersionStamp(c);
   }
 
@@ -173,25 +271,27 @@
   }
 
   function drawInstructionsOverlay(c) {
-    c.fillStyle = 'rgba(36, 23, 8, 0.62)';
+    /* Click anywhere closes it. */
+    pointerOver(c, 0, 0, W, H);
+    c.fillStyle = 'rgba(36, 23, 8, 0.72)';
     c.fillRect(0, 0, W, H);
-    panel(c, 110, 100, 580, 280);
+    panel(c, 110, 100, 580, 280, PAL.cream);
     c.fillStyle = PAL.ink;
-    c.font = 'bold 20px monospace';
+    c.font = 'bold 20px "M PLUS Rounded 1c", sans-serif';
     c.fillText(T('howToPlay'), W / 2, 134);
-    c.font = '15px monospace';
+    c.font = '15px "M PLUS Rounded 1c", sans-serif';
     multiline(c, T('instructions'), W / 2, 190, 24);
-    c.font = '13px monospace';
+    c.font = '13px "M PLUS Rounded 1c", sans-serif';
     c.fillStyle = 'rgba(74,51,32,0.7)';
     c.fillText(T('closeHint'), W / 2, 352);
   }
 
   function drawResetConfirm(c) {
-    c.fillStyle = 'rgba(36, 23, 8, 0.62)';
+    c.fillStyle = 'rgba(36, 23, 8, 0.72)';
     c.fillRect(0, 0, W, H);
-    panel(c, 200, 190, 400, 180);
+    panel(c, 200, 190, 400, 180, PAL.cream);
     c.fillStyle = PAL.ink;
-    c.font = 'bold 16px monospace';
+    c.font = 'bold 16px "M PLUS Rounded 1c", sans-serif';
     multiline(c, T('startOverConfirm'), W / 2, 236, 24);
     button(c, RESET_YES, T('yes'), { fill: '#e88a7a' });
     button(c, RESET_NO, T('no'));
@@ -220,7 +320,7 @@
   function drawVersionStamp(c) {
     c.save();
     c.fillStyle = 'rgba(74, 51, 32, 0.45)';
-    c.font = '11px monospace';
+    c.font = '11px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'right';
     c.textBaseline = 'bottom';
     c.fillText(Game.VERSION || '', W - 8, H - 6);
@@ -250,9 +350,9 @@
     c.fillStyle = PAL.ink;
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    c.font = 'bold 26px monospace';
+    c.font = 'bold 26px "M PLUS Rounded 1c", sans-serif';
     c.fillText(T('introTitle'), W / 2, 52);
-    c.font = '14px monospace';
+    c.font = '14px "M PLUS Rounded 1c", sans-serif';
     multiline(c, T('introText'), W / 2, 104, 21);
 
     button(c, INTRO_BTN, T('continueBtn'), { fill: PAL.sun, font: 16 });
@@ -342,7 +442,7 @@
     c.fillStyle = PAL.ink;
     c.textAlign = 'left';
     c.textBaseline = 'middle';
-    c.font = 'bold 22px monospace';
+    c.font = 'bold 22px "M PLUS Rounded 1c", sans-serif';
     c.fillText(T('customTitle') + ': ' + T(nameKeyFor(target)), 22, 32);
 
     /* Preview */
@@ -374,13 +474,13 @@
       var r = cellRect(v);
       var vid = tab.variants[v];
       var sel = tab.field && cust[tab.field] === vid;
-      c.fillStyle = sel ? PAL.sun : 'rgba(255,244,220,0.9)';
+      c.fillStyle = tileFill(c, r, sel, PAL.cream, 'rgba(255,244,220,0.9)');
       E.roundRect(c, r.x, r.y, r.w, r.h, 8);
       c.fill();
       E.ink(c, sel ? 3 : 1.8);
       drawVariantIcon(c, tab.id, vid, r.x + 40, r.y + r.h / 2, cust);
       c.fillStyle = PAL.ink;
-      c.font = 'bold 12px monospace';
+      fitFont(c, T(tab.labelPrefix + vid), r.w - 80, 12, 'bold');
       c.textAlign = 'left';
       c.textBaseline = 'middle';
       c.fillText(T(tab.labelPrefix + vid), r.x + 74, r.y + r.h / 2);
@@ -393,21 +493,22 @@
         c.fillStyle = tab.colors[s];
         E.roundRect(c, sr.x, sr.y, sr.w, sr.h, 8);
         c.fill();
-        E.ink(c, cust[tab.colorField] === tab.colors[s] ? 4 : 1.8);
+        E.ink(c, cust[tab.colorField] === tab.colors[s] ? 4 : (pointerOver(c, sr.x, sr.y, sr.w, sr.h) ? 3 : 1.8));
       }
     }
 
     /* Character picker */
     if (roster.length > 1) {
       c.fillStyle = 'rgba(74,51,32,0.7)';
-      c.font = 'bold 12px monospace';
+      c.font = 'bold 12px "M PLUS Rounded 1c", sans-serif';
       c.textAlign = 'left';
       c.fillText(T('customPickWho'), CUST.pickerX, CUST.pickerY - 14);
       for (var p = 0; p < roster.length; p++) {
         var pr = portraitRect(p);
         var pcust = custRecord(roster[p].id);
-        if (roster[p].id === target) {
-          c.fillStyle = PAL.sun;
+        var pHot = roster[p].id !== target && pointerOver(c, pr.x, pr.y, pr.w, pr.h);
+        if (roster[p].id === target || pHot) {
+          c.fillStyle = pHot ? 'rgba(255, 244, 220, 0.8)' : PAL.sun;
           E.roundRect(c, pr.x - 4, pr.y - 4, pr.w + 8, pr.h + 8, 12);
           c.fill();
         }
@@ -560,7 +661,7 @@
     switch (id) {
       case 'none':
         c.fillStyle = 'rgba(74,51,32,0.5)';
-        c.font = 'bold 13px monospace';
+        c.font = 'bold 13px "M PLUS Rounded 1c", sans-serif';
         c.textAlign = 'center';
         c.textBaseline = 'middle';
         c.fillText('—', 0, -10);
@@ -586,7 +687,7 @@
     switch (id) {
       case 'none':
         c.fillStyle = 'rgba(74,51,32,0.5)';
-        c.font = 'bold 15px monospace';
+        c.font = 'bold 15px "M PLUS Rounded 1c", sans-serif';
         c.textAlign = 'center';
         c.textBaseline = 'middle';
         c.fillText('—', 0, 0);
@@ -612,7 +713,7 @@
      ================================================================ */
 
   var SHOP = {
-    tabY: 72, tabH: 36, tabW: 150, tabGap: 8, tabX: 100,
+    tabY: 72, tabH: 36, tabW: 150, tabGap: 8, tabX: 167,   /* (800 - 3*150 - 2*8) / 2 */
     matCols: 7, matCellW: 98, matCellH: 104, matY: 116,
     furCols: 8, furCellW: 94, furCellH: 70, furY: 118,
     bagPanel: { x: 12, y: 352, w: 452, h: 114 },
@@ -703,7 +804,7 @@
     c.fillStyle = '#3b2a16';
     c.fillRect(0, 0, W, 60);
     c.fillStyle = PAL.sun;
-    c.font = 'bold 22px monospace';
+    c.font = 'bold 22px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'left';
     c.textBaseline = 'middle';
     c.fillText(T('shopTitle'), 20, 30);
@@ -724,7 +825,7 @@
     for (var ti = 0; ti < tabs.length; ti++) if (tabs[ti].id === shopTab) cur = tabs[ti];
     if (cur && cur.locked) {
       c.fillStyle = PAL.cream;
-      c.font = 'bold 17px monospace';
+      c.font = 'bold 17px "M PLUS Rounded 1c", sans-serif';
       c.textAlign = 'center';
       c.fillText(T(cur.lockKey), W / 2, 220);
     } else {
@@ -735,7 +836,7 @@
     drawBuildList(c);
 
     c.fillStyle = 'rgba(255,244,220,0.8)';
-    c.font = '12px monospace';
+    c.font = '12px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
     c.fillText(T('shopHint'), W / 2, 340);
   }
@@ -747,30 +848,31 @@
       var flashing = shopFlashTimer > 0 && shopFlash === cell.type;
       var owned = cell.kind === 'piano' && Game.flags.pianoOwned;
 
+      var cellHot = !owned && pointerOver(c, cell.x + 4, cell.y + 4, cell.w - 8, cell.h - 8);
       c.fillStyle = owned ? 'rgba(180,170,150,0.75)'
-        : (flashing ? PAL.sun : 'rgba(255, 244, 220, 0.92)');
+        : (flashing ? PAL.sun : (cellHot ? PAL.cream : 'rgba(255, 244, 220, 0.92)'));
       E.roundRect(c, cell.x + 4, cell.y + 4, cell.w - 8, cell.h - 8, 8);
       c.fill();
-      E.ink(c, flashing ? 3 : 1.8);
+      E.ink(c, flashing || cellHot ? 3 : 1.8);
 
       if (cell.kind === 'material') {
         E.drawMaterialIcon(c, cell.type, cell.x + cell.w / 2, cell.y + cell.h / 2 - 8, 46);
         c.fillStyle = PAL.ink;
-        c.font = 'bold 11px monospace';
+        fitFont(c, T('mat_' + cell.type), cell.w - 16, 12, 'bold', 10);
         c.textAlign = 'center';
         c.textBaseline = 'middle';
         c.fillText(T('mat_' + cell.type), cell.x + cell.w / 2, cell.y + cell.h - 22);
       } else if (cell.kind === 'furniture') {
         drawFurniture(c, cell.type, cell.x + cell.w / 2, cell.y + cell.h - 24, 'palette');
         c.fillStyle = PAL.ink;
-        c.font = 'bold 9px monospace';
+        fitFont(c, T('furniture_' + cell.type), cell.w - 14, 11, 'bold', 9);
         c.textAlign = 'center';
         c.textBaseline = 'middle';
         c.fillText(T('furniture_' + cell.type), cell.x + cell.w / 2, cell.y + cell.h - 12);
       } else {
         drawFurniture(c, 'piano', cell.x + cell.w / 2, cell.y + cell.h - 34, 'placed');
         c.fillStyle = PAL.ink;
-        c.font = 'bold 15px monospace';
+        c.font = 'bold 15px "M PLUS Rounded 1c", sans-serif';
         c.textAlign = 'center';
         c.textBaseline = 'middle';
         c.fillText(T(owned ? 'shopPianoSold' : 'furniture_piano'), cell.x + cell.w / 2, cell.y + cell.h - 16);
@@ -782,7 +884,7 @@
     var p = SHOP.bagPanel;
     panel(c, p.x, p.y, p.w, p.h);
     c.fillStyle = PAL.ink;
-    c.font = 'bold 14px monospace';
+    c.font = 'bold 14px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'left';
     c.textBaseline = 'middle';
     c.fillText(T('shopCart') + ' ' + bagUsed() + ' / ' + Game.bag.MAX, p.x + 14, p.y + 20);
@@ -797,7 +899,7 @@
       E.ink(c, 2);
       drawFurniture(c, 'piano', s.x + 62, s.y + s.size - 6, 'palette');
       c.fillStyle = PAL.ink;
-      c.font = 'bold 13px monospace';
+      c.font = 'bold 13px "M PLUS Rounded 1c", sans-serif';
       c.textAlign = 'left';
       c.textBaseline = 'middle';
       c.fillText(T('furniture_piano'), s.x + 118, s.y + s.size / 2);
@@ -815,7 +917,7 @@
 
     if (Game.bag.items.length === 0) {
       c.fillStyle = 'rgba(74,51,32,0.6)';
-      c.font = '11px monospace';
+      c.font = '11px "M PLUS Rounded 1c", sans-serif';
       c.textAlign = 'left';
       c.fillText(T('shopCartEmpty'), p.x + 132, p.y + 20);
     }
@@ -834,7 +936,7 @@
     var p = SHOP.listPanel;
     panel(c, p.x, p.y, p.w, p.h);
     c.fillStyle = PAL.ink;
-    c.font = 'bold 13px monospace';
+    c.font = 'bold 13px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'left';
     c.textBaseline = 'middle';
 
@@ -848,7 +950,7 @@
     var remaining = remainingNeeds(stage);
     var keys = Object.keys(stage.needs);
     var col = 0, row = 0;
-    c.font = 'bold 11px monospace';
+    c.font = 'bold 11px "M PLUS Rounded 1c", sans-serif';
     for (var i = 0; i < keys.length; i++) {
       var k = keys[i];
       var left = remaining[k] || 0;
@@ -1000,26 +1102,32 @@
   function drawBuildHud(c) {
     var stage = currentStage();
     var px = 12, py = 10, pw = 236, ph = 62;
+    if (!stage) {
+      /* Sized to the message, so "finished!" can't run off the panel. */
+      c.font = 'bold 15px ' + FONT;
+      pw = Math.max(pw, c.measureText(T('buildDone')).width + 28);
+      ph = 44;
+    }
     panel(c, px, py, pw, ph, 'rgba(255, 244, 220, 0.88)');
     c.fillStyle = PAL.ink;
     c.textAlign = 'left';
     c.textBaseline = 'middle';
     if (!stage) {
-      c.font = 'bold 14px monospace';
-      c.fillText(T('buildDone'), px + 14, py + ph / 2);
+      c.font = 'bold 15px ' + FONT;
+      c.fillText(T('buildDone'), px + 14, py + ph / 2 + 1);
       return;
     }
-    c.font = 'bold 11px monospace';
+    c.font = 'bold 11px "M PLUS Rounded 1c", sans-serif';
     c.fillStyle = 'rgba(74,51,32,0.7)';
     c.fillText(T('buildNext'), px + 12, py + 15);
-    c.font = 'bold 15px monospace';
+    fitFont(c, T('stage_' + stage.id), pw - 24, 15, 'bold');
     c.fillStyle = PAL.ink;
     c.fillText(T('stage_' + stage.id), px + 12, py + 33);
 
     var remaining = remainingNeeds(stage);
     var keys = Object.keys(stage.needs);
     var ix = px + 12;
-    c.font = 'bold 10px monospace';
+    c.font = 'bold 10px "M PLUS Rounded 1c", sans-serif';
     for (var i = 0; i < keys.length && i < 5; i++) {
       var left = remaining[keys[i]] || 0;
       E.drawMaterialIcon(c, keys[i], ix + 8, py + 50, 17);
@@ -1091,7 +1199,7 @@
   /* Floating "press DO to ..." bubble above an interactable. */
   function drawPrompt(c, sx, sy, label) {
     var bob = Math.sin(t / 12) * 3;
-    c.font = 'bold 13px monospace';
+    c.font = 'bold 13px "M PLUS Rounded 1c", sans-serif';
     var w = c.measureText(label).width + 34;
     var x = sx - w / 2, y = sy + bob;
     c.fillStyle = 'rgba(255, 244, 220, 0.95)';
@@ -1100,11 +1208,11 @@
     E.ink(c, 2);
     E.fillEllipse(c, x + 16, y + 15, 9, 9, PAL.sun);
     c.fillStyle = PAL.ink;
-    c.font = 'bold 10px monospace';
+    c.font = 'bold 10px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     c.fillText(Game.input.isTouch() ? T('actionBtn') : '␣', x + 16, y + 16);
-    c.font = 'bold 13px monospace';
+    c.font = 'bold 13px "M PLUS Rounded 1c", sans-serif';
     c.fillText(label, x + 16 + (w - 16) / 2, y + 16);
   }
 
@@ -1147,11 +1255,11 @@
     c.globalAlpha = a;
     panel(c, 220, 178, 360, 104);
     c.fillStyle = PAL.ink;
-    c.font = 'bold 15px monospace';
+    c.font = 'bold 15px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     c.fillText(T('stageBuilt'), 400, 208);
-    c.font = 'bold 22px monospace';
+    c.font = 'bold 22px "M PLUS Rounded 1c", sans-serif';
     c.fillStyle = '#3b6b2a';
     c.fillText(T('stage_' + cutscene.stageId), 400, 244);
     c.restore();
@@ -1163,7 +1271,8 @@
 
   var EXT = {
     previewX: 18, previewY: 52, previewW: 316, previewH: 404,
-    tabX: 348, tabY: 58, tabW: 86, tabH: 36, tabGap: 4,
+    /* Five tabs span exactly the grid below: 350 .. 782. */
+    tabX: 350, tabY: 58, tabW: 83.2, tabH: 36, tabGap: 4,
     gridX: 350, gridY: 106, cellW: 212, cellH: 62, cols: 2, gap: 8,
     swatchX: 352, swatchY: 316, swatchSize: 42, swatchGap: 12,
     done: { x: 636, y: 410, w: 148, h: 46 },
@@ -1204,7 +1313,7 @@
     c.fillRect(0, 0, W, H);
 
     c.fillStyle = PAL.ink;
-    c.font = 'bold 22px monospace';
+    c.font = 'bold 22px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'left';
     c.textBaseline = 'middle';
     c.fillText(T('extTitle'), 20, 28);
@@ -1231,7 +1340,8 @@
       for (var d = 0; d < tab.toggles.length; d++) {
         var dr = extCellRect(d);
         var on = !!ext.decor[tab.toggles[d]];
-        c.fillStyle = on ? PAL.leafLight : 'rgba(255,244,220,0.9)';
+        /* Selected = sun yellow, same as every other tile in the game. */
+        c.fillStyle = tileFill(c, dr, on, PAL.cream, 'rgba(255,244,220,0.9)');
         E.roundRect(c, dr.x, dr.y, dr.w, dr.h, 8);
         c.fill();
         E.ink(c, on ? 3 : 1.8);
@@ -1250,7 +1360,7 @@
           c.stroke();
         }
         c.fillStyle = PAL.ink;
-        c.font = 'bold 13px monospace';
+        fitFont(c, T(tab.labelPrefix + tab.toggles[d]), dr.w - 54, 13, 'bold');
         c.textAlign = 'left';
         c.textBaseline = 'middle';
         c.fillText(T(tab.labelPrefix + tab.toggles[d]), dr.x + 46, dr.y + dr.h / 2);
@@ -1259,13 +1369,13 @@
       for (var v = 0; v < tab.variants.length; v++) {
         var r = extCellRect(v);
         var sel = ext[tab.field] === tab.variants[v];
-        c.fillStyle = sel ? PAL.sun : 'rgba(255,244,220,0.9)';
+        c.fillStyle = tileFill(c, r, sel, PAL.cream, 'rgba(255,244,220,0.9)');
         E.roundRect(c, r.x, r.y, r.w, r.h, 8);
         c.fill();
         E.ink(c, sel ? 3 : 1.8);
         drawExtIcon(c, tab.id, tab.variants[v], r.x + 34, r.y + r.h / 2, ext);
         c.fillStyle = PAL.ink;
-        c.font = 'bold 13px monospace';
+        fitFont(c, T(tab.labelPrefix + tab.variants[v]), r.w - 76, 13, 'bold');
         c.textAlign = 'left';
         c.textBaseline = 'middle';
         c.fillText(T(tab.labelPrefix + tab.variants[v]), r.x + 68, r.y + r.h / 2);
@@ -1278,7 +1388,7 @@
         c.fillStyle = tab.colors[s];
         E.roundRect(c, sr.x, sr.y, sr.w, sr.h, 8);
         c.fill();
-        E.ink(c, ext[tab.colorField] === tab.colors[s] ? 4 : 1.8);
+        E.ink(c, ext[tab.colorField] === tab.colors[s] ? 4 : (pointerOver(c, sr.x, sr.y, sr.w, sr.h) ? 3 : 1.8));
       }
     }
 
@@ -1415,9 +1525,11 @@
     exit: { x: 648, y: 6, w: 138, h: 32 },
     /* palette strip */
     stripY: 44, stripH: 154,
-    clear: { x: 690, y: 50, w: 96, h: 26 },
+    clear: { x: 662, y: 50, w: 124, h: 26 },
     catX: 12, catY: 78, catW: 96, catH: 26, catGap: 2,
-    itemX: 20, itemY: 110, itemW: 68, itemH: 78, itemGap: 10,
+    /* No category holds more than six pieces, so the tiles can be wide
+       enough for a 10px label like かんようしょくぶつ. */
+    itemX: 20, itemY: 110, itemW: 100, itemH: 78, itemGap: 10,
     /* the room */
     wallTop: 198, floorY: 252,
     /* `top` is far enough down the floor that even the tallest piece (the
@@ -1636,14 +1748,22 @@
       panel(c, bx, 210, bw, 38, PAL.sun);
       c.restore();
       c.fillStyle = PAL.ink;
-      c.font = 'bold 14px monospace';
+      c.font = 'bold 14px "M PLUS Rounded 1c", sans-serif';
       c.textAlign = 'center';
       c.textBaseline = 'middle';
       c.fillText(T('furnitureTapFloor'), W / 2, 229);
-      /* Translucent ghost of the piece, bobbing, so it's clear what lands. */
+      /* Translucent ghost of the piece, bobbing, so it's clear what lands.
+         It follows the mouse over the floor (clamped exactly as placePiece
+         will clamp it); on touch there's no hover, so it waits mid-floor. */
+      var gx = W / 2, gy = 396;
+      var mp = Game.input.pointer;
+      if (mp.px >= 0 && mp.y > ROOM.stripY + ROOM.stripH) {
+        gx = Math.max(ROOM.floor.left, Math.min(ROOM.floor.right, mp.x));
+        gy = Math.max(ROOM.floor.top, Math.min(ROOM.floor.bottom, mp.y));
+      }
       c.save();
       c.globalAlpha = 0.42 + Math.sin(t / 12) * 0.14;
-      drawFurniture(c, selectedPiece, W / 2, 396 + Math.sin(t / 12) * 4, 'placed');
+      drawFurniture(c, selectedPiece, gx, gy + Math.sin(t / 12) * 4, 'placed');
       c.restore();
     }
 
@@ -1704,13 +1824,13 @@
     c.stroke();
 
     c.fillStyle = PAL.sun;
-    c.font = 'bold 14px monospace';
+    c.font = 'bold 14px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'left';
     c.textBaseline = 'middle';
     c.fillText(T('furnitureTitle'), 14, ROOM.stripY + 18);
     /* The two-step instruction, right where the two steps happen. */
     c.fillStyle = 'rgba(255, 244, 220, 0.8)';
-    c.font = '11px monospace';
+    c.font = '11px "M PLUS Rounded 1c", sans-serif';
     c.fillText(T('furnitureHint'), 152, ROOM.stripY + 18);
 
     button(c, ROOM.clear, T('furnitureClear'), { font: 11, fill: '#e88a7a', r: 6 });
@@ -1725,10 +1845,12 @@
       var ir = paletteItemRect(k);
       var owned = items[k].count > 0;
       var sel = selectedPiece === items[k].type;
-      c.fillStyle = sel ? PAL.sun : (owned ? 'rgba(255,244,220,0.95)' : 'rgba(255,244,220,0.28)');
+      var itemHot = !sel && pointerOver(c, ir.x, ir.y, ir.w, ir.h);
+      c.fillStyle = sel ? PAL.sun : (owned ? (itemHot ? '#fffaf0' : 'rgba(255,244,220,0.95)')
+                                           : (itemHot ? 'rgba(255,244,220,0.42)' : 'rgba(255,244,220,0.28)'));
       E.roundRect(c, ir.x, ir.y, ir.w, ir.h, 8);
       c.fill();
-      E.ink(c, sel ? 3.5 : 1.6);
+      E.ink(c, sel ? 3.5 : (itemHot ? 2.6 : 1.6));
 
       c.save();
       if (!owned) c.globalAlpha = 0.45;
@@ -1736,21 +1858,21 @@
       c.restore();
 
       c.fillStyle = owned ? PAL.ink : 'rgba(74,51,32,0.6)';
-      c.font = 'bold 8px monospace';
+      fitFont(c, T('furniture_' + items[k].type), ir.w - 8, 11, 'bold', 10);
       c.textAlign = 'center';
       c.textBaseline = 'middle';
-      c.fillText(T('furniture_' + items[k].type), ir.x + ir.w / 2, ir.y + ir.h - 9);
+      c.fillText(T('furniture_' + items[k].type), ir.x + ir.w / 2, ir.y + ir.h - 10);
 
       /* Count badge, or a little cart when you don't own one yet. */
       if (owned) {
         E.fillEllipse(c, ir.x + ir.w - 10, ir.y + 10, 10, 10, PAL.leaf);
         c.fillStyle = PAL.cream;
-        c.font = 'bold 11px monospace';
+        c.font = 'bold 11px "M PLUS Rounded 1c", sans-serif';
         c.fillText(String(items[k].count), ir.x + ir.w - 10, ir.y + 10);
       } else {
         E.fillEllipse(c, ir.x + ir.w - 10, ir.y + 10, 10, 10, 'rgba(74,51,32,0.5)');
         c.fillStyle = PAL.cream;
-        c.font = 'bold 10px monospace';
+        c.font = 'bold 10px "M PLUS Rounded 1c", sans-serif';
         c.fillText('0', ir.x + ir.w - 10, ir.y + 10);
       }
     }
@@ -2174,7 +2296,7 @@
     c.fillRect(0, 0, W, H);
     panel(c, 250, 120, 300, 290);
     c.fillStyle = PAL.ink;
-    c.font = 'bold 24px monospace';
+    c.font = 'bold 24px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     c.fillText(T('paused'), W / 2, 160);
@@ -2193,7 +2315,8 @@
     return null;
   }
 
-  var VICTORY_BTN = { x: 320, y: 412, w: 160, h: 44 };
+  var VICTORY_BTN = { x: 325, y: 412, w: 150, h: 44 };
+  var VICTORY_SPOTS = [200, 600, 104, 696, 290];
 
   function drawVictory(c) {
     t++;
@@ -2210,24 +2333,26 @@
     c.restore();
 
     /* Everyone on the grass out front */
+    /* Everyone stands either side of the trunk, leaving the middle for
+       the Keep Playing button. */
     var roster = designRoster();
     for (var i = 0; i < roster.length; i++) {
-      var cx = 190 + i * 110;
+      var cx = VICTORY_SPOTS[i % VICTORY_SPOTS.length];
       var frame = Math.floor(t / 10 + i) % 4 + 1;
-      E.drawCharacter(c, cx, 446, custRecord(roster[i].id), frame, i % 2 === 0 ? 1 : -1, 1, false);
+      E.drawCharacter(c, cx, 446, custRecord(roster[i].id), frame, cx < W / 2 ? 1 : -1, 1, false);
     }
 
     c.save();
     c.globalAlpha = 0.92;
-    panel(c, 120, 40, 560, 150);
+    panel(c, 120, 26, 560, 170);
     c.restore();
     c.fillStyle = PAL.ink;
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    c.font = 'bold 26px monospace';
-    c.fillText(T('victoryTitle'), W / 2, 74);
-    c.font = '13px monospace';
-    multiline(c, T('victoryText'), W / 2, 108, 19);
+    c.font = 'bold 26px "M PLUS Rounded 1c", sans-serif';
+    c.fillText(T('victoryTitle'), W / 2, 58);
+    c.font = '13px "M PLUS Rounded 1c", sans-serif';
+    multiline(c, T('victoryText'), W / 2, 94, 19);
 
     button(c, VICTORY_BTN, T('victoryAgain'), { fill: PAL.sun, font: 15 });
   }
@@ -2239,10 +2364,26 @@
 
   /* ================================================================ */
 
+  /* Canvas text doesn't trigger web-font downloads reliably (Safari), so
+     ask for every weight we draw with, covering all game text. Cached
+     scenery sprites with words on them are repainted once it lands. */
+  if (document.fonts && document.fonts.load) {
+    var sample = Game.i18n.allText();
+    ['400', '700'].forEach(function (wgt) {
+      document.fonts.load(wgt + ' 16px "M PLUS Rounded 1c"', sample)
+        .then(function () { E.clearSpriteCache(); })
+        .catch(function () {});
+    });
+  }
+
   window.Game.ui = {
     /* shared */
     button: button, hit: hit, panel: panel, multiline: multiline,
+    FONT: FONT, pointerOver: pointerOver, fitFont: fitFont, layoutLines: layoutLines,
+    beginFrame: function () { anyHot = false; },
+    isHot: function () { return anyHot; },
     showToast: showToast, drawToast: drawToast,
+    dropStaleToast: dropStaleToast, endFrame: endFrame,
     drawVersionStamp: drawVersionStamp,
     /* title / intro */
     drawTitleScreen: drawTitleScreen, handleTitleClick: handleTitleClick,

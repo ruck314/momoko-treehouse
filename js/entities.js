@@ -10,17 +10,30 @@
   window.Game = window.Game || {};
   var PAL = Game.PAL;
 
-  /* ---- Offscreen sprite memo (static scenery only) ---- */
+  /* ---- Offscreen sprite memo (static scenery only) ----
+     Painted at devicePixelRatio so cached scenery is as crisp as live
+     drawing on HiDPI screens; drawSprite() scales it back to logical size. */
   var spriteCache = {};
   function getCachedSprite(key, w, h, drawFn) {
+    var dpr = Math.min(3, window.devicePixelRatio || 1);
+    key += '@' + dpr;
     if (spriteCache[key]) return spriteCache[key];
     var cv = document.createElement('canvas');
-    cv.width = Math.max(1, Math.ceil(w));
-    cv.height = Math.max(1, Math.ceil(h));
-    drawFn(cv.getContext('2d'));
+    cv.lw = Math.max(1, Math.ceil(w));
+    cv.lh = Math.max(1, Math.ceil(h));
+    cv.width = Math.ceil(cv.lw * dpr);
+    cv.height = Math.ceil(cv.lh * dpr);
+    var g = cv.getContext('2d');
+    g.scale(dpr, dpr);
+    drawFn(g);
     spriteCache[key] = cv;
     return cv;
   }
+  function drawSprite(c, spr, x, y) {
+    c.drawImage(spr, x, y, spr.lw, spr.lh);
+  }
+  /* Called once the web font loads, so signs repaint in it. */
+  function clearSpriteCache() { spriteCache = {}; }
 
   /* ---- Shape helpers ---- */
   function ink(c, w) {
@@ -393,7 +406,7 @@
       fillEllipse(g, 0, -152, 48, 42, PAL.leafDark);
       g.restore();
     });
-    c.drawImage(spr, d.x - w / 2, d.y - h);
+    drawSprite(c, spr, d.x - w / 2, d.y - h);
   }
 
   function drawBush(c, d) {
@@ -403,7 +416,7 @@
       fillEllipse(g, 16, -10, 18, 15, PAL.leaf);
       fillEllipse(g, 0, -18, 22, 19, PAL.leafLight);
     });
-    c.drawImage(spr, d.x - 45, d.y - 54);
+    drawSprite(c, spr, d.x - 45, d.y - 54);
   }
 
   function drawStump(c, d) {
@@ -414,7 +427,7 @@
       fillEllipse(g, 0, -26, 8, 3, shade(PAL.barkLight, -14), false);
       fillEllipse(g, 0, -26, 3, 1.2, shade(PAL.barkLight, -26), false);
     });
-    c.drawImage(spr, d.x - 30, d.y - 42);
+    drawSprite(c, spr, d.x - 30, d.y - 42);
   }
 
   function drawRock(c, d) {
@@ -426,7 +439,7 @@
       fillPath(g, [[-12, -14], [0, -19], [8, -12], [-2, -10]], '#cdc7bf', true, false);
       g.restore();
     });
-    c.drawImage(spr, d.x - 27, d.y - 32);
+    drawSprite(c, spr, d.x - 27, d.y - 32);
   }
 
   var FLOWER_COLORS = ['#ff9ec4', '#ffd24a', '#fff4dc', '#b06aa8', '#8fd0e8'];
@@ -448,7 +461,7 @@
         fillEllipse(g, fx, h - 16, 1.9, 1.9, PAL.sun, false);
       }
     });
-    c.drawImage(spr, d.x - w / 2, d.y - h);
+    drawSprite(c, spr, d.x - w / 2, d.y - h);
   }
 
   function drawMushroom(c, d) {
@@ -459,17 +472,17 @@
       fillEllipse(g, -5, -14, 2.4, 1.8, PAL.cream, false);
       fillEllipse(g, 4, -16, 2, 1.6, PAL.cream, false);
     });
-    c.drawImage(spr, d.x - 17, d.y - 28);
+    drawSprite(c, spr, d.x - 17, d.y - 28);
   }
 
   /* Shrink a label until it fits `maxW`, so a Japanese string (wider glyphs)
      never overflows a sign painted for English. */
   function fitText(c, text, maxW, basePx) {
     var px = basePx;
-    c.font = 'bold ' + px + 'px monospace';
+    c.font = 'bold ' + px + 'px "M PLUS Rounded 1c", sans-serif';
     while (px > 7 && c.measureText(text).width > maxW) {
       px -= 1;
-      c.font = 'bold ' + px + 'px monospace';
+      c.font = 'bold ' + px + 'px "M PLUS Rounded 1c", sans-serif';
     }
   }
 
@@ -485,11 +498,11 @@
       g.textBaseline = 'middle';
       var shopWord = (window.Game && Game.i18n) ? Game.i18n.t('signShop') : 'SHOP';
       fitText(g, shopWord, 42, 12);
-      g.fillText(shopWord, -8, -45);
-      /* arrow pointing back down the path */
-      fillPath(g, [[14, -50], [24, -45], [14, -40]], PAL.ink, true, false);
+      g.fillText(shopWord, 8, -45);
+      /* arrow pointing back down the path -- the shop is to the left */
+      fillPath(g, [[-14, -50], [-24, -45], [-14, -40]], PAL.ink, true, false);
     });
-    c.drawImage(spr, d.x - 38, d.y - 74);
+    drawSprite(c, spr, d.x - 38, d.y - 74);
   }
 
   function drawMeadowDecor(c, d) {
@@ -834,6 +847,7 @@
 
   window.Game.entities = {
     getCachedSprite: getCachedSprite,
+    clearSpriteCache: clearSpriteCache,
     ink: ink,
     roundRect: roundRect,
     fillRound: fillRound,

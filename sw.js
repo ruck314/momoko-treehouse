@@ -1,7 +1,18 @@
 /* Bump this string alongside Game.VERSION in js/engine.js on every release.
    A new CACHE_NAME forces the activate handler to purge the old cache, so
    returning visitors pick up the new bundle on their next page load. */
-var CACHE_NAME = 'momoko-treehouse-v1.2.0';
+var CACHE_PREFIX = 'momoko-treehouse-';
+var CACHE_NAME = CACHE_PREFIX + 'v1.3.0';
+/* Every game on ruck314.github.io shares one Cache Storage, so only purge
+   this game's own caches -- never the other games' offline copies. */
+function isOwnCache(n) {
+  return n.indexOf(CACHE_PREFIX) === 0;
+}
+/* The UI font comes from Google Fonts; cache it so offline play keeps it. */
+function isFontRequest(url) {
+  return url.indexOf('https://fonts.googleapis.com/') === 0 ||
+         url.indexOf('https://fonts.gstatic.com/') === 0;
+}
 var ASSETS = [
   './',
   './index.html',
@@ -32,7 +43,7 @@ self.addEventListener('activate', function (e) {
   e.waitUntil(
     caches.keys().then(function (names) {
       return Promise.all(
-        names.filter(function (n) { return n !== CACHE_NAME; })
+        names.filter(function (n) { return n !== CACHE_NAME && isOwnCache(n); })
              .map(function (n) { return caches.delete(n); })
       );
     })
@@ -49,7 +60,7 @@ self.addEventListener('fetch', function (e) {
   e.respondWith(
     fetch(e.request)
       .then(function (res) {
-        if (res && res.ok && res.type === 'basic') {
+        if (res && res.ok && (res.type === 'basic' || isFontRequest(e.request.url))) {
           var clone = res.clone();
           caches.open(CACHE_NAME).then(function (cache) {
             cache.put(e.request, clone);

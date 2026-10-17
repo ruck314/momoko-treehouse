@@ -32,6 +32,9 @@
   };
   var BUTTON_NAMES = ['up', 'down', 'left', 'right', 'action', 'pause'];
   var isTouchDevice = false;
+  /* Mouse pointer in game-space, for button hover/press feedback. Only
+     real mice update it -- touch taps would leave a stale "hover". */
+  var pointer = { x: -1, y: -1, px: -1, py: -1, down: false };
   var canvas = null;
   var canvasRect = null;
   var GAME_W = 800;   /* logical game viewport width */
@@ -296,6 +299,13 @@
     canvas.addEventListener('mousedown', onMouseDown);
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
+    canvas.addEventListener('pointermove', onPointer);
+    canvas.addEventListener('pointerdown', onPointer);
+    window.addEventListener('pointerup', onPointer);
+    canvas.addEventListener('pointerleave', function () {
+      pointer.x = pointer.y = pointer.px = pointer.py = -1;
+      pointer.down = false;
+    });
 
     isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
   }
@@ -328,18 +338,17 @@
     c.fillStyle = '#241708';
     c.fillRect(0, 0, cw, ch);
 
-    if (gx > 0) paintEdgeGlow(c, gx - 10, 0, 10, ch, 'h', false);
-    if (rEdge < cw) paintEdgeGlow(c, rEdge, 0, 10, ch, 'h', true);
-    if (gy > 0) paintEdgeGlow(c, 0, gy - 10, cw, 10, 'v', false);
-    if (bEdge < ch) paintEdgeGlow(c, 0, bEdge, cw, 10, 'v', true);
+    /* Glow and frame hug the viewport only. Running them the full canvas
+       width/height crossed the side bezels and split them into boxes. */
+    if (gx > 0) paintEdgeGlow(c, gx - 10, gy, 10, GAME_H, 'h', false);
+    if (rEdge < cw) paintEdgeGlow(c, rEdge, gy, 10, GAME_H, 'h', true);
+    if (gy > 0) paintEdgeGlow(c, gx, gy - 10, GAME_W, 10, 'v', false);
+    if (bEdge < ch) paintEdgeGlow(c, gx, bEdge, GAME_W, 10, 'v', true);
 
     if (gx > 0 || gy > 0 || rEdge < cw || bEdge < ch) {
       c.strokeStyle = '#5a3c1e';
       c.lineWidth = 2;
-      if (gx > 0) { c.beginPath(); c.moveTo(gx + 0.5, 0); c.lineTo(gx + 0.5, ch); c.stroke(); }
-      if (rEdge < cw) { c.beginPath(); c.moveTo(rEdge - 0.5, 0); c.lineTo(rEdge - 0.5, ch); c.stroke(); }
-      if (gy > 0) { c.beginPath(); c.moveTo(0, gy + 0.5); c.lineTo(cw, gy + 0.5); c.stroke(); }
-      if (bEdge < ch) { c.beginPath(); c.moveTo(0, bEdge - 0.5); c.lineTo(cw, bEdge - 0.5); c.stroke(); }
+      c.strokeRect(gx - 1, gy - 1, GAME_W + 2, GAME_H + 2);
     }
     c.restore();
 
@@ -381,7 +390,7 @@
       c.lineWidth = 2;
       c.stroke();
       c.fillStyle = '#fff4dc';
-      c.font = 'bold 34px monospace';
+      c.font = 'bold 34px "M PLUS Rounded 1c", sans-serif';
       c.textAlign = 'center';
       c.textBaseline = 'middle';
       c.fillText(arrows[i], b.x, b.y);
@@ -395,15 +404,16 @@
     c.fill();
 
     var ab = touchButtons.action;
-    c.fillStyle = ab.active ? '#ffc36e' : '#d1892f';
+    c.fillStyle = ab.active ? '#d1892f' : '#a85a18';
     c.beginPath();
     c.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2);
     c.fill();
     c.strokeStyle = '#ffd24a';
     c.lineWidth = 2;
     c.stroke();
-    c.fillStyle = '#3b2a16';
-    c.font = 'bold 22px monospace';
+    /* Cream on deep orange: the old dark-brown label barely read. */
+    c.fillStyle = '#fff4dc';
+    c.font = 'bold 26px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     var actionLabel = (window.Game && Game.i18n) ? Game.i18n.t('actionBtn') : 'DO';
@@ -418,7 +428,7 @@
     c.lineWidth = 2;
     c.stroke();
     c.fillStyle = '#fff4dc';
-    c.font = 'bold 20px monospace';
+    c.font = 'bold 20px "M PLUS Rounded 1c", sans-serif';
     c.fillText('II', pb.x, pb.y);
 
     c.restore();
@@ -442,6 +452,20 @@
     return { x: canvasX - gameOffsetX(), y: canvasY - gameOffsetY() };
   }
 
+  function onPointer(e) {
+    if (e.pointerType !== 'mouse') return;
+    if (e.type === 'pointerup') { pointer.down = false; return; }
+    var p = getClickPos(e);
+    var rect = canvas.getBoundingClientRect();
+    pointer.x = p.x;
+    pointer.y = p.y;
+    /* Backing-store pixels, so painters can map it through whatever
+       transform is current when they draw (see ui.js pointerOver). */
+    pointer.px = (e.clientX - rect.left) * canvas.width / rect.width;
+    pointer.py = (e.clientY - rect.top) * canvas.height / rect.height;
+    if (e.type === 'pointerdown') pointer.down = true;
+  }
+
   window.Game.input = {
     init: init,
     update: function () {
@@ -454,6 +478,7 @@
     drawTouchStrip: drawTouchStrip,
     drawTouchButtons: drawTouchButtons,
     getClickPos: getClickPos,
+    pointer: pointer,
     isTouch: function () { return isTouchDevice; },
     /* Piano hooks. Pass null to restore normal D-pad / movement handling. */
     setRawTouchListener: function (fn) {

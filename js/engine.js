@@ -13,7 +13,7 @@
   var GAME_X = 0, GAME_Y = 0;
 
   /* Bump alongside CACHE_NAME in sw.js and tag the matching git release. */
-  Game.VERSION = 'v1.2.0';
+  Game.VERSION = 'v1.3.0';
 
   var canvas, ctx;
 
@@ -557,10 +557,15 @@
     ctx.beginPath();
     ctx.rect(0, 0, W, H);
     ctx.clip();
+    Game.ui.beginFrame();
+    if (state !== renderedState) {
+      Game.ui.dropStaleToast();
+      renderedState = state;
+    }
 
     switch (state) {
       case State.TITLE: Game.ui.drawTitleScreen(ctx); break;
-      case State.CUSTOMIZE: Game.ui.drawCustomizeScreen(ctx); break;
+      case State.CUSTOMIZE: Game.ui.drawCustomizeScreen(ctx); Game.ui.drawToast(ctx); break;
       case State.INTRO: Game.ui.drawIntroScreen(ctx); break;
       case State.PLAYING: drawWorld(ctx); break;
       case State.PAUSED: drawWorld(ctx); Game.ui.drawPauseMenu(ctx); break;
@@ -573,6 +578,25 @@
     }
 
     ctx.restore();
+    Game.ui.endFrame();
+    updateChrome();
+  }
+
+  /* DOM bits that track the game state: the Game Center link only shows
+     where it can't cover play (it sat on the room tabs, screen titles and
+     the build HUD), and the cursor turns into a pointer over anything
+     clickable. */
+  var renderedState = null;
+  var linkEl = null, lastLinkShown = null, lastCursor = null;
+  function updateChrome() {
+    if (!linkEl) linkEl = document.getElementById('game-center-link');
+    var show = state === State.TITLE || state === State.PAUSED;
+    if (linkEl && show !== lastLinkShown) {
+      linkEl.classList.toggle('hidden', !show);
+      lastLinkShown = show;
+    }
+    var cursor = Game.ui.isHot() ? 'pointer' : 'default';
+    if (cursor !== lastCursor) { canvas.style.cursor = cursor; lastCursor = cursor; }
   }
 
   /* Touch buttons only make sense where the D-pad drives something.
@@ -593,8 +617,9 @@
     c.fillStyle = g;
     c.fillRect(0, 0, W, M.groundY);
 
-    /* Sun + clouds drift slower than the ground for depth. */
-    E.fillEllipse(c, 96, 66, 34, 34, PAL.sun, false);
+    /* Sun + clouds drift slower than the ground for depth. The sun sits
+       between the build HUD (left) and the bag (right), not behind them. */
+    E.fillEllipse(c, 470, 62, 30, 30, PAL.sun, false);
     c.save();
     c.globalAlpha = 0.85;
     drawCloud(c, ((t * 0.2 - camX * 0.25) % (W + 300) + W + 300) % (W + 300) - 150, 70, 1);

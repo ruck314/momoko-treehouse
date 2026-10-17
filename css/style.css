@@ -6,7 +6,7 @@ html, body {
   height: 100%;
   overflow: hidden;
   background: #241708;
-  font-family: monospace;
+  font-family: "M PLUS Rounded 1c", sans-serif;
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
@@ -33,13 +33,19 @@ html, body {
   z-index: 10000;
   color: #ffd24a;
   text-decoration: none;
-  font-family: monospace;
+  font-family: "M PLUS Rounded 1c", sans-serif;
   font-size: 14px;
   padding: 6px 10px;
   background: rgba(36, 23, 8, 0.72);
   border: 1px solid #7bc45a;
   border-radius: 6px;
   pointer-events: auto;
+}
+
+/* Only shown on the title and pause screens (engine.js toggles the
+   class) so it never covers the room tabs, titles or build HUD. */
+#game-center-link.hidden {
+  display: none;
 }
 
 #game-center-link:hover {
@@ -66,7 +72,7 @@ html, body {
   inset: 0;
   background: #241708;
   color: #a8dd7a;
-  font-family: monospace;
+  font-family: "M PLUS Rounded 1c", sans-serif;
   font-size: 20px;
   flex-direction: column;
   align-items: center;

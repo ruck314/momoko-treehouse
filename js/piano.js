@@ -340,20 +340,20 @@
     c.fillStyle = 'rgba(58, 40, 20, 0.85)';
     c.fillRect(0, 0, W, 60);
     c.fillStyle = PAL.cream;
-    c.font = 'bold 24px monospace';
+    c.font = 'bold 24px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'left';
     c.textBaseline = 'middle';
     c.fillText(Game.i18n.t('pianoTitle'), 20, 30);
 
     /* Octave control */
-    c.font = 'bold 14px monospace';
+    c.font = 'bold 14px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'right';
     c.fillStyle = PAL.creamDark;
     c.fillText(Game.i18n.t('pianoOctave'), 492, 30);
     button(c, BTN_OCT_DOWN, '−', false);
     button(c, BTN_OCT_UP, '+', false);
     c.fillStyle = PAL.cream;
-    c.font = 'bold 16px monospace';
+    c.font = 'bold 16px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
     c.fillText(octaveShift === 0 ? '0' : (octaveShift > 0 ? '+' + (octaveShift / 12) : String(octaveShift / 12)), 566, 30);
 
@@ -369,14 +369,14 @@
     E.ink(c, 2);
 
     c.fillStyle = PAL.ink;
-    c.font = 'bold 18px monospace';
+    c.font = 'bold 18px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'left';
     c.textBaseline = 'middle';
     c.fillText(Game.i18n.t(song.titleKey), 26, 96);
 
     if (mode === 'follow') {
       var done = followIdx >= song.notes.length;
-      c.font = 'bold 15px monospace';
+      c.font = 'bold 15px "M PLUS Rounded 1c", sans-serif';
       c.textAlign = 'right';
       if (done) {
         c.fillText(Game.i18n.t('pianoWellDone'), W - 26, 96);
@@ -390,11 +390,11 @@
         E.roundRect(c, px, py, pw * (followIdx / song.notes.length), 6, 3); c.fill();
       }
     } else if (mode === 'listen') {
-      c.font = 'bold 15px monospace';
+      c.font = 'bold 15px "M PLUS Rounded 1c", sans-serif';
       c.textAlign = 'right';
       c.fillText('♪ ' + Game.i18n.t('pianoListen'), W - 26, 96);
     } else if (hintTimer > 0) {
-      c.font = '14px monospace';
+      c.font = '14px "M PLUS Rounded 1c", sans-serif';
       c.textAlign = 'right';
       c.fillStyle = 'rgba(74,51,32,0.75)';
       c.fillText(Game.input.isTouch() ? Game.i18n.t('pianoHintTouch') : Game.i18n.t('pianoHintKeys'), W - 26, 96);
@@ -403,12 +403,13 @@
     for (var i = 0; i < Game.SONGS.length; i++) {
       var b = songChip(i);
       var sel = (i === songIdx);
-      c.fillStyle = sel ? PAL.sun : 'rgba(255,244,220,0.8)';
+      var hot = !sel && Game.ui.pointerOver(c, b.x, b.y, b.w, b.h);
+      c.fillStyle = sel ? PAL.sun : (hot ? PAL.cream : 'rgba(255,244,220,0.8)');
       E.roundRect(c, b.x, b.y, b.w, b.h, 8);
       c.fill();
-      E.ink(c, sel ? 2.5 : 1.6);
+      E.ink(c, sel || hot ? 2.5 : 1.6);
       c.fillStyle = PAL.ink;
-      c.font = 'bold 11px monospace';
+      c.font = 'bold 11px "M PLUS Rounded 1c", sans-serif';
       c.textAlign = 'center';
       c.textBaseline = 'middle';
       wrapLabel(c, Game.i18n.t(Game.SONGS[i].titleKey), b.x + b.w / 2, b.y + b.h / 2, b.w - 10);
@@ -418,39 +419,29 @@
     button(c, BTN_FOLLOW, Game.i18n.t(mode === 'follow' ? 'pianoStop' : 'pianoFollow'), mode === 'follow');
   }
 
-  /* Two-line centred label for the narrow song chips. */
+  /* Up-to-two-line centred label for the narrow song chips. Line breaking
+     is shared with ui.js (spaces first, then per character for Japanese
+     titles); the font shrinks until the title fits in two lines. */
   function wrapLabel(c, text, cx, cy, maxW) {
-    if (c.measureText(text).width <= maxW) {
-      c.fillText(text, cx, cy);
+    var size = 11, lines;
+    while (true) {
+      c.font = 'bold ' + size + 'px ' + Game.ui.FONT;
+      lines = Game.ui.layoutLines(c, text, maxW);
+      if (lines.length <= 2 || size <= 8) break;
+      size--;
+    }
+    if (lines.length === 1) {
+      c.fillText(lines[0], cx, cy);
       return;
     }
-    var words = text.split(' ');
-    var line1 = '', line2 = '';
-    for (var i = 0; i < words.length; i++) {
-      var trial = line1 ? line1 + ' ' + words[i] : words[i];
-      if (c.measureText(trial).width <= maxW && !line2) line1 = trial;
-      else line2 = line2 ? line2 + ' ' + words[i] : words[i];
-    }
-    if (!line2) {
-      /* No spaces to break on (Japanese titles) – split by character. */
-      var half = Math.ceil(text.length / 2);
-      line1 = text.slice(0, half);
-      line2 = text.slice(half);
-    }
-    c.fillText(line1, cx, cy - 7);
-    c.fillText(line2, cx, cy + 7);
+    c.fillText(lines[0], cx, cy - 7);
+    c.fillText(lines[1], cx, cy + 7);
   }
 
+  /* Same glossy hover / press button as the rest of the game; `active`
+     lights it peach while Listen / Follow is running. */
   function button(c, b, label, active) {
-    c.fillStyle = active ? PAL.peach : 'rgba(255,244,220,0.9)';
-    E.roundRect(c, b.x, b.y, b.w, b.h, 8);
-    c.fill();
-    E.ink(c, 2);
-    c.fillStyle = PAL.ink;
-    c.font = 'bold 13px monospace';
-    c.textAlign = 'center';
-    c.textBaseline = 'middle';
-    c.fillText(label, b.x + b.w / 2, b.y + b.h / 2);
+    Game.ui.button(c, b, label, { active: active, activeFill: PAL.peach, font: 13, r: 8 });
   }
 
   function followTargetMidi() {
@@ -502,7 +493,7 @@
       }
       /* Note letter along the bottom lip – helps with Follow mode. */
       c.fillStyle = 'rgba(74,51,32,0.45)';
-      c.font = 'bold 11px monospace';
+      c.font = 'bold 11px "M PLUS Rounded 1c", sans-serif';
       c.textAlign = 'center';
       c.textBaseline = 'middle';
       c.fillText(midiName(soundingMidi(k)), k.x + k.w / 2, k.y + k.h - 14);
@@ -561,7 +552,7 @@
     c.fill();
     E.ink(c, 3);
     c.fillStyle = PAL.ink;
-    c.font = 'bold 20px monospace';
+    c.font = 'bold 20px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     c.fillText(Game.i18n.t('pianoWellDone'), 400, 100);
