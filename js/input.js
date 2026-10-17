@@ -264,8 +264,10 @@
       var leftCx = lStrip / 2;
       var rightCx = canvasLogicalW() - rStrip / 2;
       var cy = canvasLogicalH() / 2;
-      var pad = Math.floor(Math.min(54, Math.floor(lStrip / 4.5)) * 0.85);
-      var spacing = Math.floor(Math.min(66, Math.floor(lStrip / 3.8)) * 0.85);
+      /* Diagonal neighbours sit spacing*sqrt(2) apart, so spacing must be
+         at least (2*pad + gap)/sqrt(2) or the circles overlap. */
+      var pad = Math.min(40, Math.floor(lStrip / 6.5));
+      var spacing = Math.ceil((2 * pad + 8) / Math.SQRT2);
       touchButtons.up =    { x: leftCx, y: cy - spacing, r: pad, active: false };
       touchButtons.down =  { x: leftCx, y: cy + spacing, r: pad, active: false };
       touchButtons.left =  { x: leftCx - spacing, y: cy, r: pad, active: false };
@@ -390,7 +392,7 @@
       c.lineWidth = 2;
       c.stroke();
       c.fillStyle = '#fff4dc';
-      c.font = 'bold 34px "M PLUS Rounded 1c", sans-serif';
+      c.font = 'bold ' + Math.round(b.r * 0.78) + 'px "M PLUS Rounded 1c", sans-serif';
       c.textAlign = 'center';
       c.textBaseline = 'middle';
       c.fillText(arrows[i], b.x, b.y);
@@ -400,7 +402,7 @@
     var centerY = (touchButtons.up.y + touchButtons.down.y) / 2;
     c.fillStyle = '#3b2a16';
     c.beginPath();
-    c.arc(centerX, centerY, 22, 0, Math.PI * 2);
+    c.arc(centerX, centerY, Math.max(8, touchButtons.up.r * 0.4), 0, Math.PI * 2);
     c.fill();
 
     var ab = touchButtons.action;

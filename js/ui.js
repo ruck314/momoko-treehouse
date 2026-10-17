@@ -1196,72 +1196,190 @@
     }
   }
 
-  /* Floating "press DO to ..." bubble above an interactable. */
+  /* Floating "press DO to ..." bubble above an interactable. The key is
+     drawn as a little key cap (Space) on keyboards, or a sun-yellow DO
+     chip on touch, so it never depends on a glyph the font may lack. */
   function drawPrompt(c, sx, sy, label) {
     var bob = Math.sin(t / 12) * 3;
-    c.font = 'bold 13px "M PLUS Rounded 1c", sans-serif';
-    var w = c.measureText(label).width + 34;
+    var touch = Game.input.isTouch();
+    var key = touch ? T('actionBtn') : 'Space';
+    c.font = 'bold 9px ' + FONT;
+    var kw = Math.max(touch ? 22 : 34, c.measureText(key).width + 10);
+    c.font = 'bold 13px ' + FONT;
+    var lw = c.measureText(label).width;
+    var w = 8 + kw + 7 + lw + 12;
     var x = sx - w / 2, y = sy + bob;
-    c.fillStyle = 'rgba(255, 244, 220, 0.95)';
+    c.save();
+    c.fillStyle = 'rgba(36, 23, 8, 0.22)';
+    E.roundRect(c, x, y + 3, w, 30, 15);
+    c.fill();
+    c.fillStyle = 'rgba(255, 244, 220, 0.97)';
     E.roundRect(c, x, y, w, 30, 15);
     c.fill();
     E.ink(c, 2);
-    E.fillEllipse(c, x + 16, y + 15, 9, 9, PAL.sun);
+
+    /* key cap: darker skirt, lighter top face */
+    var kx = x + 8, ky = y + 6;
+    if (touch) {
+      E.fillRound(c, kx, ky, kw, 18, 9, PAL.sun, false);
+      E.ink(c, 1.5);
+    } else {
+      E.fillRound(c, kx, ky + 1, kw, 18, 5, PAL.creamDark, false);
+      c.fillStyle = '#fffaf0';
+      E.roundRect(c, kx + 2, ky + 1, kw - 4, 13, 4);
+      c.fill();
+      E.roundRect(c, kx, ky + 1, kw, 18, 5);
+      E.ink(c, 1.5);
+    }
     c.fillStyle = PAL.ink;
-    c.font = 'bold 10px "M PLUS Rounded 1c", sans-serif';
+    c.font = 'bold 9px ' + FONT;
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    c.fillText(Game.input.isTouch() ? T('actionBtn') : '␣', x + 16, y + 16);
-    c.font = 'bold 13px "M PLUS Rounded 1c", sans-serif';
-    c.fillText(label, x + 16 + (w - 16) / 2, y + 16);
+    c.fillText(key, kx + kw / 2, ky + (touch ? 9.5 : 8));
+    c.font = 'bold 13px ' + FONT;
+    c.textAlign = 'left';
+    c.fillText(label, kx + kw + 7, y + 16);
+    c.restore();
   }
 
   /* ================================================================
      Build cutscene
      ================================================================ */
+  /* The camera glides to frame the tree, the new part fades and settles
+     into place under a shower of sparkles, and a compact ribbon at the top
+     names it -- nothing covers the house that was just built. Particles
+     live in world space so they stay on the tree while the camera moves. */
+  var CUT_LEN = 120;
   var cutscene = { timer: 0, stageId: null, particles: [] };
 
   function startBuildCutscene(stageId) {
-    cutscene.timer = 110;
+    cutscene.timer = CUT_LEN;
     cutscene.stageId = stageId;
     cutscene.particles = [];
     Game.audio.play('build');
   }
 
+  /* 0..1: how far the new layer has settled (eased). */
+  function cutsceneReveal() {
+    var k = Math.max(0, Math.min(1, (CUT_LEN - cutscene.timer - 8) / 34));
+    return k * k * (3 - 2 * k);
+  }
+
+  /* Where on the tree the new part is, in world space, and how wide. */
+  function cutsceneFocus() {
+    var M = Game.MEADOW;
+    var a = Game.tree.anchors(M.tree.x, M.tree.groundY);
+    switch (cutscene.stageId) {
+      case 'platform': return { x: a.x, y: a.platformY, w: a.platformW };
+      case 'walls': return { x: a.x, y: a.houseTop + a.houseH / 2, w: a.houseW };
+      case 'roof': return { x: a.x, y: a.houseTop - a.roofH / 2, w: a.houseW + 30 };
+      case 'ladder': return { x: a.ladderX + a.ladderW / 2, y: a.platformY + 60, w: 40 };
+      case 'openings': return { x: a.x, y: a.winCy + 8, w: a.houseW };
+      default: return { x: a.x, y: a.houseTop + 20, w: a.houseW + 60 };
+    }
+  }
+
+  var CUT_COLORS = [PAL.sun, PAL.cream, PAL.leafLight, PAL.peach, '#ffffff'];
   function updateBuildCutscene() {
     cutscene.timer--;
     for (var i = cutscene.particles.length - 1; i >= 0; i--) {
       cutscene.particles[i].update();
       if (cutscene.particles[i].life <= 0) cutscene.particles.splice(i, 1);
     }
-    if (cutscene.timer % 7 === 0 && cutscene.timer > 40) {
-      E.spawnBurst(cutscene.particles, 400 + (Math.random() - 0.5) * 260, 250,
-        6, [PAL.sun, PAL.cream, PAL.leafLight], 3.4);
+    var f = cutsceneFocus();
+    var age = CUT_LEN - cutscene.timer;
+    var before = cutscene.particles.length;
+    /* one big pop as the part lands, then a gentle shower over it */
+    if (age === 34) E.spawnBurst(cutscene.particles, f.x, f.y, 44, CUT_COLORS, 5);
+    if (age > 34 && age < 84 && age % 4 === 0) {
+      E.spawnBurst(cutscene.particles, f.x + (Math.random() - 0.5) * f.w, f.y - 10,
+        6, CUT_COLORS, 2.8);
     }
+    /* chunkier than the delivery puff, so they read as celebration */
+    for (var n = before; n < cutscene.particles.length; n++) cutscene.particles[n].size *= 1.6;
     return cutscene.timer <= 0 ? 'done' : null;
   }
 
   function drawBuildCutsceneOverlay(c) {
-    var a = Math.min(1, cutscene.timer / 30);
+    var age = CUT_LEN - cutscene.timer;
+    var out = Math.min(1, cutscene.timer / 24);          /* fade at the end */
+    var camX = Game.engine.getCameraX();
+    var f = cutsceneFocus();
+    var fx = f.x - camX, fy = f.y;
+
+    /* Soft vignette that keeps the tree bright. */
     c.save();
-    c.globalAlpha = a * 0.55;
-    c.fillStyle = '#241708';
+    var v = c.createRadialGradient(fx, 260, 120, fx, 260, 560);
+    v.addColorStop(0, 'rgba(36, 23, 8, 0)');
+    v.addColorStop(1, 'rgba(36, 23, 8, 0.42)');
+    c.globalAlpha = out * Math.min(1, age / 16);
+    c.fillStyle = v;
     c.fillRect(0, 0, W, H);
+
+    /* Warm glow blooming behind the new part as it settles. */
+    var gk = Math.sin(Math.min(1, age / 70) * Math.PI);
+    if (gk > 0) {
+      c.globalCompositeOperation = 'lighter';
+      c.globalAlpha = 0.32 * gk * out;
+      var gl = c.createRadialGradient(fx, fy, 6, fx, fy, f.w * 0.75 + 40);
+      gl.addColorStop(0, 'rgba(255, 226, 140, 0.9)');
+      gl.addColorStop(1, 'rgba(255, 226, 140, 0)');
+      c.fillStyle = gl;
+      c.fillRect(fx - f.w - 60, fy - f.w - 60, f.w * 2 + 120, f.w * 2 + 120);
+    }
     c.restore();
 
-    for (var i = 0; i < cutscene.particles.length; i++) cutscene.particles[i].draw(c);
-
+    /* Particles plus a ring of twinkling stars around the new part. */
     c.save();
-    c.globalAlpha = a;
-    panel(c, 220, 178, 360, 104);
-    c.fillStyle = PAL.ink;
-    c.font = 'bold 15px "M PLUS Rounded 1c", sans-serif';
+    c.translate(-camX, 0);
+    for (var i = 0; i < cutscene.particles.length; i++) cutscene.particles[i].draw(c);
+    c.restore();
+    if (age > 30) {
+      c.save();
+      for (var s = 0; s < 7; s++) {
+        var tw = Math.sin(age / 6 + s * 1.9);
+        if (tw <= 0) continue;
+        var ang = s * 0.9 + age / 90;
+        var sx = fx + Math.cos(ang) * (f.w / 2 + 18);
+        var sy = fy + Math.sin(ang) * 46;
+        c.globalAlpha = tw * out;
+        c.fillStyle = '#fff6c8';
+        E.star(c, sx, sy, 4 + tw * 4);
+      }
+      c.restore();
+    }
+
+    /* Ribbon banner at the top: drops in, then lifts away. */
+    var drop = Math.min(1, age / 16);
+    drop = 1 - (1 - drop) * (1 - drop);
+    var by = -70 + drop * 82 - (1 - out) * 40;
+    var title = T('stage_' + cutscene.stageId);
+    c.save();
+    c.globalAlpha = out;
+    c.font = 'bold 22px ' + FONT;
+    var bw = Math.max(250, Math.min(420, c.measureText(title).width + 120));
+    var bx = W / 2 - bw / 2, bh = 58;
+    /* ribbon tails */
+    E.fillPath(c, [[bx + 14, by + 14], [bx - 26, by + 18], [bx - 12, by + 36], [bx - 26, by + 54], [bx + 14, by + 50]], '#e0a92a');
+    E.fillPath(c, [[bx + bw - 14, by + 14], [bx + bw + 26, by + 18], [bx + bw + 12, by + 36], [bx + bw + 26, by + 54], [bx + bw - 14, by + 50]], '#e0a92a');
+    c.fillStyle = 'rgba(36, 23, 8, 0.25)';
+    E.roundRect(c, bx, by + 4, bw, bh, 12);
+    c.fill();
+    E.fillRound(c, bx, by, bw, bh, 12, PAL.cream);
+    c.fillStyle = 'rgba(255, 210, 74, 0.35)';
+    E.roundRect(c, bx + 4, by + 4, bw - 8, 18, 8);
+    c.fill();
+    c.fillStyle = '#e0a92a';
+    E.star(c, bx + 26, by + bh / 2, 9); E.ink(c, 1.5);
+    E.star(c, bx + bw - 26, by + bh / 2, 9); E.ink(c, 1.5);
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    c.fillText(T('stageBuilt'), 400, 208);
-    c.font = 'bold 22px "M PLUS Rounded 1c", sans-serif';
+    c.fillStyle = PAL.ink;
+    c.font = 'bold 12px ' + FONT;
+    c.fillText(T('stageBuilt'), W / 2, by + 15);
     c.fillStyle = '#3b6b2a';
-    c.fillText(T('stage_' + cutscene.stageId), 400, 244);
+    fitFont(c, title, bw - 80, 22, 'bold', 14);
+    c.fillText(title, W / 2, by + 37);
     c.restore();
   }
 
@@ -1511,9 +1629,10 @@
   /* ================================================================
      House interior
 
-     Laid out like the house-decorating screen in momoko-in-space: the
-     palette strip lives across the top (title, Clear All, category tabs,
-     item tiles), and the room below is a walk-around floor. Momoko walks
+     Laid out like the house-decorating screen in momoko-in-space: a slim
+     top bar (room tabs, Clear All, Go Outside), one compact palette row
+     (a 3x2 block of category tabs, then the item tiles), and the room
+     below -- a full-height back wall and a walk-around floor. Momoko walks
      it in 2D and everything -- furniture, Momoko, the friend who lives
      here -- is depth-sorted by y so she can stand behind or in front of
      the furniture.
@@ -1521,21 +1640,21 @@
 
   var ROOM = {
     /* top bar */
-    tabX: 12, tabY: 6, tabW: 118, tabH: 32, tabGap: 6,
-    exit: { x: 648, y: 6, w: 138, h: 32 },
-    /* palette strip */
-    stripY: 44, stripH: 154,
-    clear: { x: 662, y: 50, w: 124, h: 26 },
-    catX: 12, catY: 78, catW: 96, catH: 26, catGap: 2,
-    /* No category holds more than six pieces, so the tiles can be wide
-       enough for a 10px label like かんようしょくぶつ. */
-    itemX: 20, itemY: 110, itemW: 100, itemH: 78, itemGap: 10,
-    /* the room */
-    wallTop: 198, floorY: 252,
-    /* `top` is far enough down the floor that even the tallest piece (the
-       piano, ~104px) clears the palette strip above. */
+    tabX: 10, tabY: 5, tabW: 112, tabH: 30, tabGap: 6,
+    clear: { x: 490, y: 7, w: 142, h: 26 },
+    exit: { x: 648, y: 5, w: 140, h: 30 },
+    /* palette strip: categories in a 3x2 block, tiles in one row */
+    stripY: 40, stripH: 82,
+    catX: 10, catY: 47, catW: 72, catH: 31, catGap: 4, catCols: 3,
+    /* No category holds more than six pieces, so one row always fits. */
+    itemX: 246, itemY: 46, itemW: 84, itemH: 70, itemGap: 6,
+    /* the room: the wall now runs from the strip down to the skirting */
+    wallTop: 122, floorY: 252,
+    /* Unchanged from v1.3 so saved furniture positions stay where they
+       were (they are still clamped on entry, see clampPlaced()). */
     floor: { left: 34, right: 700, top: 300, bottom: 452 },
     door: { x: 744, y: 372 },
+    windows: [150, 650],
   };
   var roomCat = 'sleep';
   var selectedPiece = null;
@@ -1547,7 +1666,9 @@
     return { x: ROOM.tabX + i * (ROOM.tabW + ROOM.tabGap), y: ROOM.tabY, w: ROOM.tabW, h: ROOM.tabH };
   }
   function catRect(i) {
-    return { x: ROOM.catX + i * (ROOM.catW + ROOM.catGap), y: ROOM.catY, w: ROOM.catW, h: ROOM.catH };
+    var col = i % ROOM.catCols, row = Math.floor(i / ROOM.catCols);
+    return { x: ROOM.catX + col * (ROOM.catW + ROOM.catGap),
+             y: ROOM.catY + row * (ROOM.catH + ROOM.catGap), w: ROOM.catW, h: ROOM.catH };
   }
   function paletteItemRect(i) {
     return { x: ROOM.itemX + i * (ROOM.itemW + ROOM.itemGap), y: ROOM.itemY, w: ROOM.itemW, h: ROOM.itemH };
@@ -1612,9 +1733,23 @@
     if (selectedPiece && !(Game.furnitureStock[selectedPiece] > 0)) selectedPiece = null;
   }
 
+  /* Keep every placed piece on the walkable floor, whatever an older
+     layout or a hand-edited save left behind. Moves pieces, never drops. */
+  function clampPlaced(items) {
+    var f = ROOM.floor;
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      if (typeof it.x !== 'number' || isNaN(it.x)) it.x = (f.left + f.right) / 2;
+      if (typeof it.y !== 'number' || isNaN(it.y)) it.y = (f.top + f.bottom) / 2;
+      it.x = Math.max(f.left, Math.min(f.right, it.x));
+      it.y = Math.max(f.top, Math.min(f.bottom, it.y));
+    }
+  }
+
   /* ---- update ---- */
   function updateHouseInterior(keys, jp) {
     validateSelection();
+    clampPlaced(Game.rooms[Game.currentRoom] || []);
     var p = ensureRoomPlayer();
     var f = ROOM.floor;
     var moving = false;
@@ -1658,6 +1793,16 @@
     return null;
   }
 
+  /* Half-width of each piece's floor shadow; 0 for flat or wall-hung
+     pieces (rug, pictures, clock, the ceiling-hung disco ball). */
+  var FOOTPRINT = {
+    bed: 54, bunkBed: 52, hammock: 50, cushion: 22, chair: 24, stool: 18,
+    sofa: 58, beanbag: 30, table: 50, coffeeTable: 42, desk: 46, shelf: 36,
+    fridge: 32, lamp: 18, lantern: 16, candle: 22, fireplace: 50, rug: 0,
+    painting: 0, mirror: 0, plant: 20, clock: 0, teaSet: 30, toybox: 32,
+    easel: 28, discoBall: 0, piano: 60,
+  };
+
   /* ---- draw ---- */
   function drawHouseInterior(c) {
     t++;
@@ -1665,26 +1810,48 @@
     var items = Game.rooms[Game.currentRoom] || [];
     var p = ensureRoomPlayer();
 
-    /* Back wall */
+    /* Back wall: plank lines, darker toward the corners */
     var g = c.createLinearGradient(0, ROOM.wallTop, 0, ROOM.floorY);
     g.addColorStop(0, rd.wallA);
     g.addColorStop(1, rd.wallB);
     c.fillStyle = g;
     c.fillRect(0, ROOM.wallTop, W, ROOM.floorY - ROOM.wallTop);
     c.save();
-    c.globalAlpha = 0.13;
+    c.globalAlpha = 0.11;
     c.strokeStyle = PAL.ink;
     c.lineWidth = 2;
-    for (var wy = ROOM.wallTop + 16; wy < ROOM.floorY; wy += 18) {
+    for (var wy = ROOM.wallTop + 24; wy < ROOM.floorY - 10; wy += 18) {
       c.beginPath(); c.moveTo(0, wy); c.lineTo(W, wy); c.stroke();
     }
     c.restore();
+    var cg = c.createLinearGradient(0, 0, W, 0);
+    cg.addColorStop(0, 'rgba(74, 51, 32, 0.16)');
+    cg.addColorStop(0.18, 'rgba(74, 51, 32, 0)');
+    cg.addColorStop(0.82, 'rgba(74, 51, 32, 0)');
+    cg.addColorStop(1, 'rgba(74, 51, 32, 0.16)');
+    c.fillStyle = cg;
+    c.fillRect(0, ROOM.wallTop, W, ROOM.floorY - ROOM.wallTop);
 
-    drawInteriorWindow(c, 150, ROOM.wallTop + 4, rd);
-    drawInteriorWindow(c, 470, ROOM.wallTop + 4, rd);
+    for (var wi = 0; wi < ROOM.windows.length; wi++) {
+      drawInteriorWindow(c, ROOM.windows[wi], ROOM.wallTop + 22, rd);
+    }
+
+    /* Crown moulding under the palette strip */
+    c.fillStyle = E.shade(rd.floor, 6);
+    c.fillRect(0, ROOM.wallTop, W, 9);
+    c.fillStyle = 'rgba(255, 244, 220, 0.35)';
+    c.fillRect(0, ROOM.wallTop + 9, W, 2);
+    c.fillStyle = 'rgba(36, 23, 8, 0.18)';
+    c.fillRect(0, ROOM.wallTop + 11, W, 4);
 
     /* Floor, in perspective so the room reads as a space you walk around */
     c.fillStyle = rd.floor;
+    c.fillRect(0, ROOM.floorY, W, H - ROOM.floorY);
+    var fg = c.createLinearGradient(0, ROOM.floorY, 0, H);
+    fg.addColorStop(0, 'rgba(36, 23, 8, 0.22)');
+    fg.addColorStop(0.35, 'rgba(36, 23, 8, 0)');
+    fg.addColorStop(1, 'rgba(255, 244, 220, 0.08)');
+    c.fillStyle = fg;
     c.fillRect(0, ROOM.floorY, W, H - ROOM.floorY);
     c.save();
     c.globalAlpha = 0.4;
@@ -1702,9 +1869,13 @@
       c.beginPath(); c.moveTo(0, yy); c.lineTo(W, yy); c.stroke();
     }
     c.restore();
-    /* Skirting board */
+    /* Skirting board with a lit top edge and a contact shadow on the floor */
     c.fillStyle = PAL.bark;
-    c.fillRect(0, ROOM.floorY - 10, W, 10);
+    c.fillRect(0, ROOM.floorY - 12, W, 12);
+    c.fillStyle = PAL.barkLight;
+    c.fillRect(0, ROOM.floorY - 12, W, 3);
+    c.fillStyle = 'rgba(36, 23, 8, 0.25)';
+    c.fillRect(0, ROOM.floorY, W, 4);
 
     drawRoomDoor(c);
 
@@ -1721,7 +1892,11 @@
 
     for (var li = 0; li < layer.length; li++) {
       var e = layer[li];
-      if (e.item) drawFurniture(c, e.item.type, e.item.x, e.item.y, 'placed', e.item.flip);
+      if (e.item) {
+        var fw = FOOTPRINT[e.item.type] === undefined ? 30 : FOOTPRINT[e.item.type];
+        if (fw) E.softShadow(c, e.item.x, e.item.y + 1, fw, Math.max(4, fw * 0.17), 0.3);
+        drawFurniture(c, e.item.type, e.item.x, e.item.y, 'placed', e.item.flip);
+      }
       else if (e.friend) E.drawCharacter(c, fs.x, fs.y, Game.friends[e.friend.id].cust, 0, -1, 1, false);
       else E.drawCharacter(c, p.x, p.y, Game.customization, p.frame, p.facing, 1, p.blink);
     }
@@ -1740,18 +1915,23 @@
     drawPalette(c);
     drawRoomTabs(c);
 
-    /* Placement call-out sits over the room, where the eye already is. */
+    /* The two-step hint lives on the wall between the windows; once a
+       piece is picked it turns into the sun-yellow "tap the floor" call-out,
+       right where the eye already is. */
+    var pillTxt = selectedPiece ? T('furnitureTapFloor') : T('furnitureHint');
+    c.font = 'bold ' + (selectedPiece ? 14 : 12) + 'px ' + FONT;
+    var pw = Math.min(330, c.measureText(pillTxt).width + 36);
+    var px0 = (W - pw) / 2, py0 = ROOM.wallTop + 26;
+    c.save();
+    c.globalAlpha = selectedPiece ? 0.96 : 0.8;
+    panel(c, px0, py0, pw, 30, selectedPiece ? PAL.sun : PAL.cream);
+    c.restore();
+    c.fillStyle = PAL.ink;
+    fitFont(c, pillTxt, pw - 20, selectedPiece ? 14 : 12, 'bold', 9);
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillText(pillTxt, W / 2, py0 + 16);
     if (selectedPiece) {
-      var bw = 420, bx = (W - bw) / 2;
-      c.save();
-      c.globalAlpha = 0.94;
-      panel(c, bx, 210, bw, 38, PAL.sun);
-      c.restore();
-      c.fillStyle = PAL.ink;
-      c.font = 'bold 14px "M PLUS Rounded 1c", sans-serif';
-      c.textAlign = 'center';
-      c.textBaseline = 'middle';
-      c.fillText(T('furnitureTapFloor'), W / 2, 229);
       /* Translucent ghost of the piece, bobbing, so it's clear what lands.
          It follows the mouse over the floor (clamped exactly as placePiece
          will clamp it); on touch there's no hover, so it waits mid-floor. */
@@ -1772,49 +1952,88 @@
 
   function drawRoomDoor(c) {
     var d = ROOM.door;
-    E.fillRound(c, d.x - 34, d.y - 104, 68, 104, 6, '#a9773f');
-    E.fillRound(c, d.x - 26, d.y - 94, 52, 44, 4, '#c69a5e');
-    E.fillEllipse(c, d.x + 20, d.y - 50, 4, 4, PAL.sun);
-    /* Daylight spilling in past the frame */
+    /* Daylight spilling in under and around the door: a warm wedge that
+       fades out across the floor, plus a bright sliver at the threshold. */
     c.save();
-    c.globalAlpha = 0.22;
-    E.fillPath(c, [[d.x - 34, d.y], [d.x + 34, d.y], [d.x + 54, d.y + 26], [d.x - 54, d.y + 26]], PAL.sun, true, false);
+    var sg = c.createLinearGradient(0, d.y, 0, d.y + 76);
+    sg.addColorStop(0, 'rgba(255, 226, 140, 0.5)');
+    sg.addColorStop(1, 'rgba(255, 226, 140, 0)');
+    c.fillStyle = sg;
+    c.beginPath();
+    c.moveTo(d.x - 34, d.y);
+    c.lineTo(d.x + 34, d.y);
+    c.quadraticCurveTo(d.x + 50, d.y + 40, d.x + 44, d.y + 76);
+    c.lineTo(d.x - 96, d.y + 76);
+    c.quadraticCurveTo(d.x - 66, d.y + 36, d.x - 34, d.y);
+    c.closePath();
+    c.fill();
     c.restore();
+    /* frame, then the door itself */
+    E.fillRound(c, d.x - 40, d.y - 110, 80, 112, 7, PAL.bark);
+    E.fillRound(c, d.x - 34, d.y - 104, 68, 104, 6, '#a9773f');
+    E.fillRound(c, d.x - 26, d.y - 94, 52, 34, 4, '#c69a5e');
+    E.fillRound(c, d.x - 26, d.y - 52, 52, 40, 4, '#c69a5e');
+    E.fillEllipse(c, d.x + 20, d.y - 56, 4, 4, PAL.sun);
+    c.fillStyle = 'rgba(255, 236, 170, 0.9)';
+    c.fillRect(d.x - 32, d.y - 3, 64, 3);
   }
 
   function drawInteriorWindow(c, cx, cy, rd) {
-    E.fillRound(c, cx - 44, cy, 88, 40, 5, PAL.cream);
-    E.fillRound(c, cx - 38, cy + 5, 76, 30, 3, PAL.sky);
+    var ww = 116, wh = 74;
+    var x = cx - ww / 2;
+    /* frame and outdoor view */
+    E.fillRound(c, x, cy, ww, wh, 6, PAL.cream);
     c.save();
-    c.beginPath(); E.roundRect(c, cx - 38, cy + 5, 76, 30, 3); c.clip();
-    E.fillEllipse(c, cx - 18, cy + 34, 28, 20, PAL.leaf, false);
-    E.fillEllipse(c, cx + 22, cy + 30, 24, 18, PAL.leafDark, false);
-    E.fillEllipse(c, cx + 2, cy + 16, 20, 14, PAL.leafLight, false);
+    c.beginPath(); E.roundRect(c, x + 7, cy + 7, ww - 14, wh - 14, 3); c.clip();
+    var sky = c.createLinearGradient(0, cy, 0, cy + wh);
+    sky.addColorStop(0, '#9cd4ea');
+    sky.addColorStop(1, '#e4f3dc');
+    c.fillStyle = sky;
+    c.fillRect(x, cy, ww, wh);
+    E.fillEllipse(c, cx + 26, cy + 22, 12, 7, '#ffffff', false);
+    E.fillEllipse(c, cx - 24, cy + wh + 2, 46, 26, '#a3cd90', false);
+    E.fillEllipse(c, cx + 30, cy + wh + 6, 44, 28, PAL.leafLight, false);
+    E.fillEllipse(c, cx - 2, cy + 34, 16, 14, PAL.leaf, false);
+    c.fillStyle = PAL.bark;
+    c.fillRect(cx - 3, cy + 42, 6, 20);
     c.restore();
+    /* glazing bars */
     c.strokeStyle = PAL.cream;
-    c.lineWidth = 4;
+    c.lineWidth = 5;
     c.beginPath();
-    c.moveTo(cx, cy + 5); c.lineTo(cx, cy + 35);
-    c.moveTo(cx - 38, cy + 20); c.lineTo(cx + 38, cy + 20);
+    c.moveTo(cx, cy + 6); c.lineTo(cx, cy + wh - 6);
+    c.moveTo(x + 6, cy + wh / 2); c.lineTo(x + ww - 6, cy + wh / 2);
     c.stroke();
-    E.roundRect(c, cx - 44, cy, 88, 40, 5);
+    E.roundRect(c, x, cy, ww, wh, 6);
     E.ink(c, 2.5);
-    c.fillStyle = rd.accent;
-    E.fillPath(c, [[cx - 48, cy - 4], [cx + 48, cy - 4], [cx + 48, cy + 6], [cx - 48, cy + 6]], rd.accent);
+    /* soft pane glint */
+    c.save();
+    c.globalAlpha = 0.35;
+    E.fillPath(c, [[x + 14, cy + 30], [x + 30, cy + 10], [x + 38, cy + 10], [x + 22, cy + 30]], '#ffffff', true, false);
+    c.restore();
+    /* sill, then curtains gathered at each side in the room's accent */
+    E.fillRound(c, x - 8, cy + wh - 2, ww + 16, 9, 3, E.shade(rd.floor, 8));
+    E.fillRound(c, x - 14, cy - 8, ww + 28, 7, 3, PAL.bark);
+    var cur = rd.accent;
+    E.fillPath(c, [[x - 12, cy - 2], [x + 14, cy - 2], [x + 4, cy + 34], [x - 4, cy + 62], [x - 14, cy + 62]], cur);
+    E.fillPath(c, [[x + ww + 12, cy - 2], [x + ww - 14, cy - 2], [x + ww - 4, cy + 34], [x + ww + 4, cy + 62], [x + ww + 14, cy + 62]], cur);
+    E.fillRound(c, x - 13, cy + 34, 14, 5, 2, E.shade(cur, -20));
+    E.fillRound(c, x + ww - 1, cy + 34, 14, 5, 2, E.shade(cur, -20));
   }
 
   function drawRoomTabs(c) {
-    c.fillStyle = 'rgba(59, 42, 22, 0.92)';
+    c.fillStyle = 'rgba(59, 42, 22, 0.96)';
     c.fillRect(0, 0, W, ROOM.stripY);
     for (var i = 0; i < Game.ROOMS.length; i++) {
       button(c, roomTabRect(i), T(Game.ROOMS[i].nameKey),
         { active: Game.ROOMS[i].id === Game.currentRoom, font: 12, r: 7 });
     }
+    button(c, ROOM.clear, T('furnitureClear'), { font: 11, fill: '#e88a7a', r: 6 });
     button(c, ROOM.exit, T('furnitureExit'), { font: 13, fill: PAL.leafLight });
   }
 
   function drawPalette(c) {
-    c.fillStyle = 'rgba(36, 23, 8, 0.86)';
+    c.fillStyle = 'rgba(36, 23, 8, 0.9)';
     c.fillRect(0, ROOM.stripY, W, ROOM.stripH);
     c.strokeStyle = 'rgba(255, 210, 74, 0.45)';
     c.lineWidth = 2;
@@ -1822,26 +2041,20 @@
     c.moveTo(0, ROOM.stripY + ROOM.stripH);
     c.lineTo(W, ROOM.stripY + ROOM.stripH);
     c.stroke();
-
-    c.fillStyle = PAL.sun;
-    c.font = 'bold 14px "M PLUS Rounded 1c", sans-serif';
-    c.textAlign = 'left';
-    c.textBaseline = 'middle';
-    c.fillText(T('furnitureTitle'), 14, ROOM.stripY + 18);
-    /* The two-step instruction, right where the two steps happen. */
-    c.fillStyle = 'rgba(255, 244, 220, 0.8)';
-    c.font = '11px "M PLUS Rounded 1c", sans-serif';
-    c.fillText(T('furnitureHint'), 152, ROOM.stripY + 18);
-
-    button(c, ROOM.clear, T('furnitureClear'), { font: 11, fill: '#e88a7a', r: 6 });
+    /* divider between the category block and the tiles */
+    c.strokeStyle = 'rgba(255, 244, 220, 0.18)';
+    c.beginPath();
+    c.moveTo(ROOM.itemX - 6, ROOM.stripY + 8);
+    c.lineTo(ROOM.itemX - 6, ROOM.stripY + ROOM.stripH - 8);
+    c.stroke();
 
     for (var i = 0; i < Game.FURNITURE_CATEGORIES.length; i++) {
       button(c, catRect(i), T('furnitureCat_' + Game.FURNITURE_CATEGORIES[i]),
-        { active: Game.FURNITURE_CATEGORIES[i] === roomCat, font: 10, r: 6 });
+        { active: Game.FURNITURE_CATEGORIES[i] === roomCat, font: 11, r: 6 });
     }
 
     var items = paletteItems();
-    for (var k = 0; k < items.length && k < 9; k++) {
+    for (var k = 0; k < items.length && k < 6; k++) {
       var ir = paletteItemRect(k);
       var owned = items[k].count > 0;
       var sel = selectedPiece === items[k].type;
@@ -1852,29 +2065,25 @@
       c.fill();
       E.ink(c, sel ? 3.5 : (itemHot ? 2.6 : 1.6));
 
+      /* Shop-sized icon, shrunk a touch so the tallest piece clears the badge */
       c.save();
       if (!owned) c.globalAlpha = 0.45;
-      drawFurniture(c, items[k].type, ir.x + ir.w / 2, ir.y + ir.h - 22, 'palette');
+      c.translate(ir.x + ir.w / 2, ir.y + ir.h - 19);
+      c.scale(0.86, 0.86);
+      drawFurniture(c, items[k].type, 0, 0, 'palette');
       c.restore();
 
       c.fillStyle = owned ? PAL.ink : 'rgba(74,51,32,0.6)';
-      fitFont(c, T('furniture_' + items[k].type), ir.w - 8, 11, 'bold', 10);
+      fitFont(c, T('furniture_' + items[k].type), ir.w - 8, 10, 'bold', 8);
       c.textAlign = 'center';
       c.textBaseline = 'middle';
-      c.fillText(T('furniture_' + items[k].type), ir.x + ir.w / 2, ir.y + ir.h - 10);
+      c.fillText(T('furniture_' + items[k].type), ir.x + ir.w / 2, ir.y + ir.h - 9);
 
-      /* Count badge, or a little cart when you don't own one yet. */
-      if (owned) {
-        E.fillEllipse(c, ir.x + ir.w - 10, ir.y + 10, 10, 10, PAL.leaf);
-        c.fillStyle = PAL.cream;
-        c.font = 'bold 11px "M PLUS Rounded 1c", sans-serif';
-        c.fillText(String(items[k].count), ir.x + ir.w - 10, ir.y + 10);
-      } else {
-        E.fillEllipse(c, ir.x + ir.w - 10, ir.y + 10, 10, 10, 'rgba(74,51,32,0.5)');
-        c.fillStyle = PAL.cream;
-        c.font = 'bold 10px "M PLUS Rounded 1c", sans-serif';
-        c.fillText('0', ir.x + ir.w - 10, ir.y + 10);
-      }
+      /* Count badge -- green when owned, a muted zero when you don't own one. */
+      E.fillEllipse(c, ir.x + ir.w - 9, ir.y + 9, 8.5, 8.5, owned ? PAL.leaf : 'rgba(74,51,32,0.5)');
+      c.fillStyle = PAL.cream;
+      c.font = 'bold 10px ' + FONT;
+      c.fillText(String(items[k].count), ir.x + ir.w - 9, ir.y + 9.5);
     }
   }
 
@@ -1902,7 +2111,7 @@
     }
 
     var items = paletteItems();
-    for (i = 0; i < items.length && i < 9; i++) {
+    for (i = 0; i < items.length && i < 6; i++) {
       if (hit(paletteItemRect(i), mx, my)) {
         if (items[i].count <= 0) {
           showToast(T('furnitureNeedBuy'));
@@ -2315,44 +2524,123 @@
     return null;
   }
 
-  var VICTORY_BTN = { x: 325, y: 412, w: 150, h: 44 };
-  var VICTORY_SPOTS = [200, 600, 104, 696, 290];
+  /* Party scene: the meadow backdrop, the finished tree on the right,
+     everyone hopping on the grass in front of it, confetti drifting down
+     and sparkles round the house. The words and the button live together
+     in one panel on the left, clear of the friends below it. */
+  var VICTORY = {
+    panel: { x: 24, y: 22, w: 360, h: 286 },
+    textTop: 76, textBottom: 232, textW: 318,
+    tree: { x: 604, groundY: 440, scale: 0.8 },
+    spots: [72, 164, 256, 408, 724],
+    groundY: 428,
+  };
+  var VICTORY_BTN = { x: 114, y: 246, w: 180, h: 46 };
+
+  var CONFETTI = (function () {
+    var rnd = E.seeded(31);
+    var cols = [PAL.sun, PAL.peach, PAL.leafLight, PAL.skyDeep, '#b06aa8', PAL.cream];
+    var out = [];
+    for (var i = 0; i < 64; i++) {
+      out.push({ x: rnd() * W, y: rnd() * (H + 40), v: 0.5 + rnd() * 0.9, ph: rnd() * 6.28,
+                 spin: 0.03 + rnd() * 0.08, w: 4 + rnd() * 4, h: 2.5 + rnd() * 3,
+                 col: cols[Math.floor(rnd() * cols.length)] });
+    }
+    return out;
+  })();
 
   function drawVictory(c) {
     t++;
-    var g = c.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, '#ffe9b8');
-    g.addColorStop(1, PAL.grass);
-    c.fillStyle = g;
-    c.fillRect(0, 0, W, H);
+    var V = VICTORY;
+    E.drawMeadowSky(c, 1500, t, V.groundY, Game.MEADOW.width);
+    /* late-afternoon warmth over the sky */
+    var wg = c.createLinearGradient(0, 0, 0, V.groundY);
+    wg.addColorStop(0, 'rgba(255, 214, 150, 0.32)');
+    wg.addColorStop(1, 'rgba(255, 214, 150, 0)');
+    c.fillStyle = wg;
+    c.fillRect(0, 0, W, V.groundY);
+    var gg = c.createLinearGradient(0, V.groundY, 0, H);
+    gg.addColorStop(0, '#78bb51');
+    gg.addColorStop(1, '#5c9a3d');
+    c.fillStyle = gg;
+    c.fillRect(0, V.groundY, W, H - V.groundY);
+    c.fillStyle = 'rgba(75, 132, 51, 0.55)';
+    c.fillRect(0, V.groundY, W, 3);
 
+    var TR = V.tree;
+    E.softShadow(c, TR.x, TR.groundY + 2, 130, 9, 0.22);
     c.save();
-    c.translate(400, 430);
-    c.scale(0.62, 0.62);
+    c.translate(TR.x, TR.groundY);
+    c.scale(TR.scale, TR.scale);
     Game.tree.drawTree(c, 0, 0, Game.BUILD_STAGES.length, Game.exterior, t, false);
     c.restore();
 
-    /* Everyone on the grass out front */
-    /* Everyone stands either side of the trunk, leaving the middle for
-       the Keep Playing button. */
+    /* sparkles twinkling round the house */
+    var a = Game.tree.anchors(0, 0);
+    c.save();
+    c.fillStyle = '#fff6c8';
+    for (var s = 0; s < 9; s++) {
+      var tw = Math.sin(t / 9 + s * 2.1);
+      if (tw <= 0) continue;
+      var ang = s * 0.7 + t / 160;
+      var sx = TR.x + Math.cos(ang) * (a.houseW * 0.62) * TR.scale * 1.25;
+      var sy = TR.groundY + (a.houseTop + 20) * TR.scale + Math.sin(ang) * 70 * TR.scale;
+      c.globalAlpha = tw;
+      E.star(c, sx, sy, 3 + tw * 4);
+    }
+    c.restore();
+
+    /* Everyone hops in front of the tree, turning to each other now and then. */
     var roster = designRoster();
     for (var i = 0; i < roster.length; i++) {
-      var cx = VICTORY_SPOTS[i % VICTORY_SPOTS.length];
-      var frame = Math.floor(t / 10 + i) % 4 + 1;
-      E.drawCharacter(c, cx, 446, custRecord(roster[i].id), frame, cx < W / 2 ? 1 : -1, 1, false);
+      var cx = V.spots[i % V.spots.length];
+      var hop = Math.max(0, Math.sin(t / 8 + i * 1.3)) * 9;
+      var face = (Math.floor(t / 70 + i) % 2) ? 1 : -1;
+      E.drawCharacter(c, cx, 452, custRecord(roster[i].id), 0, face, 1, false, hop);
     }
 
+    /* confetti, deterministic so it never needs per-frame randomness */
     c.save();
-    c.globalAlpha = 0.92;
-    panel(c, 120, 26, 560, 170);
+    for (var k = 0; k < CONFETTI.length; k++) {
+      var p = CONFETTI[k];
+      var py = (p.y + t * p.v) % (H + 40) - 20;
+      var px = p.x + Math.sin(t * 0.03 + p.ph) * 14;
+      c.save();
+      c.translate(px, py);
+      c.rotate(t * p.spin + p.ph);
+      c.scale(1, Math.abs(Math.cos(t * p.spin * 1.7 + p.ph)) * 0.8 + 0.2);
+      c.fillStyle = p.col;
+      c.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      c.restore();
+    }
     c.restore();
+
+    /* The words and the button share one panel, with real padding. */
+    var P = V.panel;
+    c.save();
+    c.fillStyle = 'rgba(36, 23, 8, 0.2)';
+    E.roundRect(c, P.x, P.y + 4, P.w, P.h, 12);
+    c.fill();
+    c.restore();
+    panel(c, P.x, P.y, P.w, P.h, 'rgba(255, 244, 220, 0.96)');
+    c.fillStyle = 'rgba(255, 210, 74, 0.3)';
+    E.roundRect(c, P.x + 6, P.y + 6, P.w - 12, 44, 8);
+    c.fill();
     c.fillStyle = PAL.ink;
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    c.font = 'bold 26px "M PLUS Rounded 1c", sans-serif';
-    c.fillText(T('victoryTitle'), W / 2, 58);
-    c.font = '13px "M PLUS Rounded 1c", sans-serif';
-    multiline(c, T('victoryText'), W / 2, 94, 19);
+    var cxP = P.x + P.w / 2;
+    fitFont(c, T('victoryTitle'), P.w - 40, 26, 'bold', 16);
+    c.fillText(T('victoryTitle'), cxP, P.y + 29);
+    c.font = '13px ' + FONT;
+    /* The string's single line breaks were set for a wider panel; re-flow
+       each paragraph to this one and keep only the paragraph gaps. */
+    var paras = T('victoryText').split('\n\n');
+    for (var pi = 0; pi < paras.length; pi++) paras[pi] = paras[pi].replace(/([、。])\n/g, '$1').replace(/\n/g, ' ');
+    var lines = layoutLines(c, paras.join('\n\n'), V.textW);
+    var lh = Math.min(20, (V.textBottom - V.textTop) / lines.length);
+    var ty = V.textTop + (V.textBottom - V.textTop - lines.length * lh) / 2 + lh / 2;
+    for (var li = 0; li < lines.length; li++) c.fillText(lines[li], cxP, ty + li * lh);
 
     button(c, VICTORY_BTN, T('victoryAgain'), { fill: PAL.sun, font: 15 });
   }
@@ -2403,6 +2691,7 @@
     /* cutscene */
     startBuildCutscene: startBuildCutscene, updateBuildCutscene: updateBuildCutscene,
     drawBuildCutsceneOverlay: drawBuildCutsceneOverlay,
+    cutsceneReveal: cutsceneReveal,
     /* exterior */
     drawExteriorScreen: drawExteriorScreen, handleExteriorClick: handleExteriorClick,
     /* interior */

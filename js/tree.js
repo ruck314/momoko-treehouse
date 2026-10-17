@@ -528,13 +528,16 @@
   };
 
   /* stageIndex = number of completed stages. ghost=true paints the next
-     stage translucently so the goal is visible on the tree itself. */
-  function drawTree(c, x, groundY, stageIndex, ext, t, ghost) {
+     stage translucently so the goal is visible on the tree itself.
+     reveal (0..1, optional) fades and settles the most recently finished
+     stage into place -- the build cutscene drives it. */
+  function drawTree(c, x, groundY, stageIndex, ext, t, ghost, reveal) {
     var a = anchors(x, groundY);
     var stages = Game.BUILD_STAGES;
     var done = {};
     for (var i = 0; i < stageIndex && i < stages.length; i++) done[stages[i].id] = true;
     var nextId = (ghost && stageIndex < stages.length) ? stages[stageIndex].id : null;
+    var newId = (reveal !== undefined && stageIndex > 0) ? stages[stageIndex - 1].id : null;
 
     canopyBack(c, a);
     trunk(c, a);
@@ -542,7 +545,13 @@
 
     for (var p = 0; p < PAINT_ORDER.length; p++) {
       var id = PAINT_ORDER[p];
-      if (done[id]) {
+      if (id === newId && reveal < 1) {
+        c.save();
+        c.globalAlpha = 0.22 + 0.78 * reveal;
+        c.translate(0, -(1 - reveal) * 16);
+        LAYERS[id](c, a, ext, t);
+        c.restore();
+      } else if (done[id]) {
         LAYERS[id](c, a, ext, t);
       } else if (id === nextId) {
         c.save();

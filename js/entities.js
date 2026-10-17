@@ -36,6 +36,33 @@
   function clearSpriteCache() { spriteCache = {}; }
 
   /* ---- Shape helpers ---- */
+
+  /* Deterministic PRNG (LCG) so scattered scenery is identical every frame
+     and every visit -- static art never calls Math.random(). */
+  function seeded(seed) {
+    var s = seed >>> 0;
+    return function () {
+      s = (s * 1664525 + 1013904223) % 4294967296;
+      return s / 4294967296;
+    };
+  }
+
+  /* Soft contact shadow: a radial fade squashed into an ellipse. */
+  function softShadow(c, cx, cy, rx, ry, alpha) {
+    c.save();
+    c.translate(cx, cy);
+    c.scale(1, ry / rx);
+    var g = c.createRadialGradient(0, 0, 0, 0, 0, rx);
+    g.addColorStop(0, 'rgba(36, 23, 8, ' + (alpha || 0.24) + ')');
+    g.addColorStop(0.6, 'rgba(36, 23, 8, ' + (alpha || 0.24) * 0.55 + ')');
+    g.addColorStop(1, 'rgba(36, 23, 8, 0)');
+    c.fillStyle = g;
+    c.beginPath();
+    c.arc(0, 0, rx, 0, Math.PI * 2);
+    c.fill();
+    c.restore();
+  }
+
   function ink(c, w) {
     c.strokeStyle = PAL.ink;
     c.lineWidth = w || 2;
@@ -312,8 +339,9 @@
     c.stroke();
   }
 
-  /* frame: 0..3 walk cycle (or 0 when standing). facing: 1 right, -1 left. */
-  function drawCharacter(c, x, y, cust, frame, facing, scale, blink) {
+  /* frame: 0..3 walk cycle (or 0 when standing). facing: 1 right, -1 left.
+     lift (optional) raises the body for a hop while the shadow stays put. */
+  function drawCharacter(c, x, y, cust, frame, facing, scale, blink, lift) {
     if (!cust) cust = Game.MOMOKO_DEFAULT;
     var sc = scale || 1;
     var f = facing || 1;
@@ -326,13 +354,10 @@
       swing = [0, 4, 0, -4][frame % 4];
       bob = [0, -1, 0, -1][frame % 4];
     }
-    c.translate(0, bob);
 
-    /* Ground shadow */
-    c.save();
-    c.globalAlpha = 0.16;
-    fillEllipse(c, 0, 1, 13, 3.5, '#000000', false);
-    c.restore();
+    /* Ground shadow -- painted before the walk bob so it stays planted. */
+    softShadow(c, 0, 1, 18 - (lift || 0) * 0.4, 4.5, 0.26);
+    c.translate(0, bob - (lift || 0));
 
     drawHair(c, cust, true);
 
@@ -381,12 +406,264 @@
      Meadow scenery
      ================================================================== */
 
+  /* ---- Backdrop: sky, sun, clouds and parallax ridges ----
+     Everything here is a pure function of (camX, t), so the meadow looks
+     the same every visit. Farther layers move less, sit higher and fade
+     toward the sky colour (atmospheric perspective). */
+  var VIEW_W = 800;
+  var FLOWER_COLORS = ['#ff9ec4', '#ffd24a', '#fff4dc', '#b06aa8', '#8fd0e8'];
+  var RIDGES = [
+    { par: 0.12, base: 262, amp: 40, ph: 1.7, fill: '#bfdccb', rim: '#d9ece0', tree: '#aacfba', treeS: 0.55 },
+    { par: 0.26, base: 304, amp: 30, ph: 4.1, fill: '#a3cd90', rim: '#bfdeaf', tree: '#88bb7c', treeS: 0.78 },
+    { par: 0.45, base: 346, amp: 22, ph: 0.6, fill: '#86bd66', rim: '#9fcf7f', tree: '#6aa553', treeS: 1 },
+  ];
+  function ridgeY(r, wx) {
+    return r.base - r.amp * (0.55 * Math.sin(wx * 0.0062 + r.ph) +
+                             0.3 * Math.sin(wx * 0.0151 + r.ph * 2.3) +
+                             0.15 * Math.sin(wx * 0.037 + r.ph * 0.7));
+  }
+
+  /* Tree positions along each ridge, in that ridge's own scroll space. */
+  var ridgeTrees = null;
+  function buildRidgeTrees(worldW) {
+    ridgeTrees = [];
+    for (var i = 0; i < RIDGES.length; i++) {
+      var rnd = seeded(101 + i * 977);
+      var list = [];
+      var span = worldW * RIDGES[i].par + VIEW_W + 120;
+      for (var x = -60 + rnd() * 80; x < span; x += 46 + rnd() * 150) {
+        /* clumps: sometimes a second tree right beside the first */
+        list.push({ x: x, s: 0.75 + rnd() * 0.5, pine: rnd() < 0.35 });
+        if (rnd() < 0.3) list.push({ x: x + 14 + rnd() * 10, s: 0.6 + rnd() * 0.35, pine: rnd() < 0.5 });
+      }
+      ridgeTrees.push(list);
+    }
+  }
+
+  function drawRidgeTree(c, x, y, s, pine, col) {
+    if (pine) {
+      fillPath(c, [[x, y - 30 * s], [x + 9 * s, y - 2 * s], [x - 9 * s, y - 2 * s]], col, true, false);
+    } else {
+      c.fillStyle = col;
+      c.fillRect(x - 1.2 * s, y - 12 * s, 2.4 * s, 12 * s);
+      fillEllipse(c, x, y - 17 * s, 9 * s, 10 * s, col, false);
+      fillEllipse(c, x - 5 * s, y - 13 * s, 6 * s, 6 * s, col, false);
+    }
+  }
+
+  /* Seven clouds over three depths: small, faint and slow far away. */
+  var CLOUDS = (function () {
+    var rnd = seeded(7);
+    var out = [];
+    var DEPTH = [
+      { par: 0.05, drift: 0.04, s: 0.42, a: 0.6, y: 176 },
+      { par: 0.12, drift: 0.09, s: 0.66, a: 0.78, y: 130 },
+      { par: 0.22, drift: 0.16, s: 0.95, a: 0.92, y: 82 },
+    ];
+    for (var i = 0; i < 7; i++) {
+      var d = DEPTH[i % 3];
+      out.push({ par: d.par, drift: d.drift, s: d.s * (0.85 + rnd() * 0.3), a: d.a,
+                 y: d.y + (rnd() - 0.5) * 34, off: rnd() * 1100 });
+    }
+    /* far ones first */
+    out.sort(function (p, q) { return p.par - q.par; });
+    return out;
+  })();
+
+  function drawSkyCloud(c, x, y, s, a) {
+    c.save();
+    c.globalAlpha = a;
+    c.translate(x, y);
+    c.scale(s, s);
+    /* shaded underside first, then the sunlit puffs over it */
+    fillEllipse(c, 0, 10, 62, 16, '#e3eff4', false);
+    fillEllipse(c, -34, 4, 30, 20, '#ffffff', false);
+    fillEllipse(c, 34, 6, 26, 17, '#ffffff', false);
+    fillEllipse(c, 0, -8, 40, 27, '#ffffff', false);
+    fillEllipse(c, -14, -16, 18, 12, 'rgba(255,255,255,0.9)', false);
+    c.restore();
+  }
+
+  function drawMeadowSky(c, camX, t, groundY, worldW) {
+    var Wv = VIEW_W;
+    var g = c.createLinearGradient(0, 0, 0, groundY);
+    g.addColorStop(0, '#9cd4ea');
+    g.addColorStop(0.5, PAL.sky);
+    g.addColorStop(0.82, '#e4f3dc');
+    g.addColorStop(1, '#f5f0d6');
+    c.fillStyle = g;
+    c.fillRect(0, 0, Wv, groundY);
+
+    /* Sun with a soft halo. It sits between the build HUD (left) and the
+       bag (right), not behind them. */
+    var sg = c.createRadialGradient(470, 62, 20, 470, 62, 92);
+    sg.addColorStop(0, 'rgba(255, 236, 160, 0.55)');
+    sg.addColorStop(1, 'rgba(255, 236, 160, 0)');
+    c.fillStyle = sg;
+    c.fillRect(370, 0, 200, 160);
+    fillEllipse(c, 470, 62, 30, 30, PAL.sun, false);
+    fillEllipse(c, 462, 54, 14, 12, 'rgba(255,255,255,0.35)', false);
+
+    var wrap = Wv + 340;
+    for (var i = 0; i < CLOUDS.length; i++) {
+      var cl = CLOUDS[i];
+      var cx = ((t * cl.drift - camX * cl.par + cl.off) % wrap + wrap) % wrap - 170;
+      drawSkyCloud(c, cx, cl.y, cl.s, cl.a);
+    }
+
+    if (!ridgeTrees) buildRidgeTrees(worldW || 2600);
+    for (var r = 0; r < RIDGES.length; r++) {
+      var R = RIDGES[r];
+      var off = camX * R.par;
+      c.beginPath();
+      c.moveTo(0, groundY);
+      for (var sx = 0; sx <= Wv; sx += 10) c.lineTo(sx, ridgeY(R, sx + off));
+      c.lineTo(Wv, groundY);
+      c.closePath();
+      c.fillStyle = R.fill;
+      c.fill();
+      /* rim light along the crest */
+      c.beginPath();
+      for (var rx = 0; rx <= Wv; rx += 10) {
+        if (rx === 0) c.moveTo(rx, ridgeY(R, rx + off) + 1.5);
+        else c.lineTo(rx, ridgeY(R, rx + off) + 1.5);
+      }
+      c.strokeStyle = R.rim;
+      c.lineWidth = 2.5;
+      c.stroke();
+      var trees = ridgeTrees[r];
+      for (var k = 0; k < trees.length; k++) {
+        var tx = trees[k].x - off;
+        if (tx < -30 || tx > Wv + 30) continue;
+        drawRidgeTree(c, tx, ridgeY(R, trees[k].x) + 3, R.treeS * trees[k].s, trees[k].pine, R.tree);
+      }
+    }
+    /* a breath of haze where the far fields meet the meadow */
+    var hz = c.createLinearGradient(0, groundY - 70, 0, groundY);
+    hz.addColorStop(0, 'rgba(245, 240, 214, 0)');
+    hz.addColorStop(1, 'rgba(245, 240, 214, 0.28)');
+    c.fillStyle = hz;
+    c.fillRect(0, groundY - 70, Wv, 70);
+  }
+
+  /* ---- Foreground: grass band, dirt path, tufts and little flowers ----
+     The whole strip is static world-space art, so it is painted once into
+     a world-wide sprite and just scrolled. The path runs from the shop
+     door to the foot of the tree and fans out at both ends. */
+  var GROUND_LIP = 12;   /* sprite starts this far above the ground line */
+  function pathDepth(x, from, to, fans) {
+    if (x < from || x > to) return 0;
+    var edge = Math.min(1, (x - from) / 90, (to - x) / 90);
+    var d = 13 + 2.5 * Math.sin(x * 0.021) + 1.5 * Math.sin(x * 0.057 + 1);
+    for (var i = 0; i < fans.length; i++) {
+      var k = (x - fans[i]) / 80;
+      d += 9 * Math.exp(-k * k);
+    }
+    return d * (edge * edge * (3 - 2 * edge));
+  }
+
+  function drawMeadowGround(c, camX, groundY, H, M) {
+    var bandH = H - groundY;
+    var spr = getCachedSprite('meadowGround', M.width, bandH + GROUND_LIP, function (g) {
+      var gy = GROUND_LIP;              /* the ground line inside the sprite */
+      var gh = bandH;
+      var rnd = seeded(2024);
+      var from = M.shop.doorX - 70, to = M.tree.x + 40;
+      var fans = [M.shop.doorX, M.tree.x - 118];
+
+      var gr = g.createLinearGradient(0, gy, 0, gy + gh);
+      gr.addColorStop(0, '#78bb51');
+      gr.addColorStop(1, '#5c9a3d');
+      g.fillStyle = gr;
+      g.fillRect(0, gy, M.width, gh);
+      /* the meadow's back edge, slightly shaded where it meets the hills */
+      g.fillStyle = 'rgba(75, 132, 51, 0.55)';
+      g.fillRect(0, gy, M.width, 3);
+
+      /* path: soil with a darker lower edge and a worn, lighter middle */
+      var x, d;
+      g.beginPath();
+      g.moveTo(from, gy + 3);
+      for (x = from; x <= to; x += 6) g.lineTo(x, gy + 3 + pathDepth(x, from, to, fans));
+      g.lineTo(to, gy + 3);
+      g.closePath();
+      g.fillStyle = '#d6b27a';
+      g.fill();
+      g.strokeStyle = '#b88f58';
+      g.lineWidth = 2;
+      g.beginPath();
+      for (x = from; x <= to; x += 6) {
+        d = pathDepth(x, from, to, fans);
+        if (x === from) g.moveTo(x, gy + 3 + d); else g.lineTo(x, gy + 3 + d);
+      }
+      g.stroke();
+      g.fillStyle = 'rgba(244, 222, 176, 0.55)';
+      for (x = from + 40; x < to - 40; x += 8) {
+        d = pathDepth(x, from, to, fans);
+        g.fillRect(x, gy + 3 + d * 0.3, 8, d * 0.25);
+      }
+      /* pebbles */
+      for (var p = 0; p < 90; p++) {
+        x = from + rnd() * (to - from);
+        d = pathDepth(x, from, to, fans);
+        if (d < 6) continue;
+        fillEllipse(g, x, gy + 5 + rnd() * (d - 4), 1.6 + rnd() * 1.6, 1 + rnd(), rnd() < 0.5 ? '#bf9b65' : '#ecd5a8', false);
+      }
+
+      /* grass tufts, bigger toward the viewer */
+      g.lineCap = 'round';
+      for (var i = 0; i < M.width / 9; i++) {
+        x = rnd() * M.width;
+        var y = gy + 8 + rnd() * (gh - 4);
+        if (y < gy + 3 + pathDepth(x, from, to, fans) + 5) continue;
+        var near = (y - gy) / gh;
+        var hgt = 4 + near * 6 + rnd() * 3;
+        g.strokeStyle = rnd() < 0.55 ? 'rgba(66, 120, 44, 0.75)' : 'rgba(150, 210, 104, 0.85)';
+        g.lineWidth = 1.3 + near;
+        for (var b = -1; b <= 1; b++) {
+          g.beginPath();
+          g.moveTo(x + b * 2, y);
+          g.quadraticCurveTo(x + b * 2.5, y - hgt * 0.6, x + b * 4.5, y - hgt * (b === 0 ? 1.15 : 0.85));
+          g.stroke();
+        }
+      }
+      /* verge tufts along the back edge, wherever the path isn't */
+      for (x = 4; x < M.width; x += 7 + rnd() * 16) {
+        if (pathDepth(x, from, to, fans) > 0.5) continue;
+        g.strokeStyle = 'rgba(75, 132, 51, 0.8)';
+        g.lineWidth = 1.4;
+        g.beginPath();
+        g.moveTo(x, gy + 4); g.quadraticCurveTo(x + 1, gy, x + 3, gy - 3);
+        g.moveTo(x + 3, gy + 4); g.quadraticCurveTo(x + 3, gy + 1, x + 1, gy - 1);
+        g.stroke();
+      }
+      /* little flowers in the grass */
+      for (var f = 0; f < M.width / 34; f++) {
+        x = rnd() * M.width;
+        var fy = gy + 18 + rnd() * (gh - 24);
+        if (fy < gy + 3 + pathDepth(x, from, to, fans) + 8) continue;
+        var col = FLOWER_COLORS[Math.floor(rnd() * FLOWER_COLORS.length)];
+        var fr = 1.5 + (fy - gy) / gh * 1.3;
+        for (var q = 0; q < 5; q++) {
+          var a = q * Math.PI * 2 / 5;
+          fillEllipse(g, x + Math.cos(a) * fr, fy + Math.sin(a) * fr, fr * 0.8, fr * 0.8, col, false);
+        }
+        fillEllipse(g, x, fy, fr * 0.55, fr * 0.55, PAL.sun, false);
+      }
+    });
+    drawSprite(c, spr, -camX, groundY - GROUND_LIP);
+  }
+
+  /* Foreground knolls, shaded so they read as rounded. */
   function drawHill(c, d) {
     c.beginPath();
     c.moveTo(d.x - d.w / 2, d.y);
     c.quadraticCurveTo(d.x, d.y - d.h, d.x + d.w / 2, d.y);
     c.closePath();
-    c.fillStyle = shade(PAL.grass, -14);
+    var g = c.createLinearGradient(0, d.y - d.h / 2, 0, d.y);
+    g.addColorStop(0, shade(PAL.grass, -4));
+    g.addColorStop(1, shade(PAL.grass, -16));
+    c.fillStyle = g;
     c.fill();
   }
 
@@ -442,7 +719,6 @@
     drawSprite(c, spr, d.x - 27, d.y - 32);
   }
 
-  var FLOWER_COLORS = ['#ff9ec4', '#ffd24a', '#fff4dc', '#b06aa8', '#8fd0e8'];
   function drawFlowers(c, d) {
     var n = d.n || 4;
     var key = 'flowers' + n;
@@ -855,6 +1131,10 @@
     fillPath: fillPath,
     shade: shade,
     star: star,
+    seeded: seeded,
+    softShadow: softShadow,
+    drawMeadowSky: drawMeadowSky,
+    drawMeadowGround: drawMeadowGround,
     drawCharacter: drawCharacter,
     drawPortrait: drawPortrait,
     drawMeadowDecor: drawMeadowDecor,

@@ -13,7 +13,7 @@
   var GAME_X = 0, GAME_Y = 0;
 
   /* Bump alongside CACHE_NAME in sw.js and tag the matching git release. */
-  Game.VERSION = 'v1.3.0';
+  Game.VERSION = 'v1.4.0';
 
   var canvas, ctx;
 
@@ -43,6 +43,11 @@
   var customizeReturn = State.TITLE;
 
   var camera = { x: 0 };
+  /* Frames left to ease back from the cutscene framing to following Momoko. */
+  var camEase = 0;
+  function treeCamX() {
+    return Math.max(0, Math.min(Game.MEADOW.width - W, Game.MEADOW.tree.x - W / 2));
+  }
   var player = null;
   var friends = {};           /* id -> Friend entity (meadow wanderers) */
   var particles = [];
@@ -428,7 +433,10 @@
         break;
 
       case State.BUILD_CUTSCENE:
+        /* Glide over to frame the whole tree while the new part goes on. */
+        camera.x += (treeCamX() - camera.x) * 0.12;
         if (Game.ui.updateBuildCutscene() === 'done') {
+          camEase = 40;
           /* Chain straight into the next stage if the pile already covers it. */
           state = State.PLAYING;
           if (!tryAdvanceStage() && checkVictory()) {
@@ -463,7 +471,9 @@
     player.update(keys, 60, Game.MEADOW.width - 60);
     for (var id in friends) friends[id].update();
 
-    camera.x = Math.max(0, Math.min(Game.MEADOW.width - W, player.x - W / 2));
+    var camTarget = Math.max(0, Math.min(Game.MEADOW.width - W, player.x - W / 2));
+    if (camEase > 0) { camEase--; camera.x += (camTarget - camera.x) * 0.15; }
+    else camera.x = camTarget;
 
     if (jp.action) {
       var target = nearest();
@@ -610,39 +620,10 @@
     var M = Game.MEADOW;
     var camX = camera.x;
 
-    /* Sky */
-    var g = c.createLinearGradient(0, 0, 0, M.groundY);
-    g.addColorStop(0, PAL.sky);
-    g.addColorStop(1, '#e6f4de');
-    c.fillStyle = g;
-    c.fillRect(0, 0, W, M.groundY);
-
-    /* Sun + clouds drift slower than the ground for depth. The sun sits
-       between the build HUD (left) and the bag (right), not behind them. */
-    E.fillEllipse(c, 470, 62, 30, 30, PAL.sun, false);
-    c.save();
-    c.globalAlpha = 0.85;
-    drawCloud(c, ((t * 0.2 - camX * 0.25) % (W + 300) + W + 300) % (W + 300) - 150, 70, 1);
-    drawCloud(c, ((t * 0.14 - camX * 0.25 + 520) % (W + 300) + W + 300) % (W + 300) - 150, 128, 0.72);
-    drawCloud(c, ((t * 0.1 - camX * 0.25 + 260) % (W + 300) + W + 300) % (W + 300) - 150, 44, 0.55);
-    c.restore();
-
-    /* Ground */
-    c.fillStyle = PAL.grass;
-    c.fillRect(0, M.groundY, W, H - M.groundY);
-    c.fillStyle = PAL.grassDark;
-    c.fillRect(0, M.groundY, W, 6);
-    c.save();
-    c.globalAlpha = 0.25;
-    c.strokeStyle = PAL.grassDark;
-    c.lineWidth = 2;
-    for (var b = -((camX * 1) % 34); b < W; b += 34) {
-      c.beginPath();
-      c.moveTo(b, H);
-      c.quadraticCurveTo(b + 5, M.groundY + 26, b + 2, M.groundY + 8);
-      c.stroke();
-    }
-    c.restore();
+    /* Sky, clouds and the parallax ridges, then the grass band with its
+       path -- all in entities.js. */
+    E.drawMeadowSky(c, camX, t, M.groundY, M.width);
+    E.drawMeadowGround(c, camX, M.groundY, H, M);
 
     /* Scenery (culled to the viewport) */
     c.save();
@@ -655,6 +636,7 @@
 
     /* Shop */
     if (M.shop.x > camX - 400 && M.shop.x < camX + W + 400) {
+      E.softShadow(c, M.shop.x, M.groundY + 2, 176, 9, 0.2);
       E.drawShop(c, M.shop.x, M.groundY, t);
     }
 
@@ -663,7 +645,10 @@
 
     /* The tree */
     if (M.tree.x > camX - 500 && M.tree.x < camX + W + 500) {
-      Game.tree.drawTree(c, M.tree.x, M.tree.groundY, Game.build.stageIndex, Game.exterior, t, true);
+      E.softShadow(c, M.tree.x, M.tree.groundY + 3, 150, 10, 0.2);
+      var building = state === State.BUILD_CUTSCENE;
+      Game.tree.drawTree(c, M.tree.x, M.tree.groundY, Game.build.stageIndex, Game.exterior, t,
+        !building, building ? Game.ui.cutsceneReveal() : undefined);
     }
 
     /* Friends */
@@ -684,19 +669,12 @@
     }
 
     Game.ui.drawCarryOverlay(c, player, camX);
-    Game.ui.drawBuildHud(c);
-    Game.ui.drawBagHud(c);
+    /* The cutscene's banner takes the top of the screen on its own. */
+    if (state !== State.BUILD_CUTSCENE) {
+      Game.ui.drawBuildHud(c);
+      Game.ui.drawBagHud(c);
+    }
     Game.ui.drawToast(c);
-  }
-
-  function drawCloud(c, x, y, s) {
-    c.save();
-    c.translate(x, y);
-    c.scale(s, s);
-    E.fillEllipse(c, -34, 6, 30, 20, '#ffffff', false);
-    E.fillEllipse(c, 34, 8, 26, 17, '#ffffff', false);
-    E.fillEllipse(c, 0, -6, 40, 27, '#ffffff', false);
-    c.restore();
   }
 
   function drawPaintPost(c, x, groundY) {
@@ -877,6 +855,7 @@
     save: save,
     getState: function () { return state; },
     getPlayer: function () { return player; },
+    getCameraX: function () { return camera.x; },
   };
 
   if (document.readyState === 'loading') {
