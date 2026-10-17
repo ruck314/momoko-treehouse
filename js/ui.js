@@ -179,65 +179,73 @@
      Title screen
      ================================================================ */
 
+  /* The title column (words + buttons) shares one centre line, clear of
+     the tree house on the left. */
+  var TITLE_CX = 532;
   var TITLE_BTN = {
-    play: { x: 300, y: 250, w: 200, h: 50 },
-    how: { x: 300, y: 312, w: 200, h: 40 },
-    lang: { x: 300, y: 362, w: 95, h: 36 },
-    sound: { x: 405, y: 362, w: 95, h: 36 },
-    reset: { x: 640, y: 428, w: 146, h: 34 },
+    play: { x: TITLE_CX - 100, y: 250, w: 200, h: 50 },
+    how: { x: TITLE_CX - 100, y: 312, w: 200, h: 40 },
+    lang: { x: TITLE_CX - 100, y: 362, w: 95, h: 36 },
+    sound: { x: TITLE_CX + 5, y: 362, w: 95, h: 36 },
+    reset: { x: 640, y: 418, w: 146, h: 34 },
   };
   var showInstructions = false;
   var confirmReset = false;
   var RESET_YES = { x: 300, y: 300, w: 90, h: 42 };
   var RESET_NO = { x: 410, y: 300, w: 90, h: 42 };
+  var TITLE_GROUND = 414;
 
   function drawTitleScreen(c) {
     t++;
-    var g = c.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, PAL.sky);
-    g.addColorStop(0.72, '#dff0d8');
-    g.addColorStop(1, PAL.grass);
-    c.fillStyle = g;
-    c.fillRect(0, 0, W, H);
+    /* The same sky and far hills as the meadow, sun moved off the title. */
+    E.drawMeadowSky(c, 640, t, TITLE_GROUND, Game.MEADOW.width, 724);
+    drawTitleGround(c);
 
-    /* Sun and drifting clouds */
-    E.fillEllipse(c, 700, 74, 40, 40, PAL.sun, false);
+    /* A finished tree house, with Momoko and Lila out front */
+    E.softShadow(c, 172, TITLE_GROUND + 8, 96, 7, 0.2);
     c.save();
-    c.globalAlpha = 0.85;
-    cloud(c, ((t * 0.25) % (W + 260)) - 130, 78, 1);
-    cloud(c, ((t * 0.16 + 420) % (W + 260)) - 130, 132, 0.7);
-    c.restore();
-
-    /* A finished tree house as the backdrop, small and off to the side */
-    c.save();
-    c.translate(150, 452);
-    c.scale(0.52, 0.52);
+    c.translate(172, TITLE_GROUND + 8);
+    c.scale(0.6, 0.6);
     Game.tree.drawTree(c, 0, 0, Game.BUILD_STAGES.length, Game.EXT_DEFAULT, t, false);
     c.restore();
-
-    /* Ground */
-    c.fillStyle = PAL.grass;
-    c.fillRect(0, 430, W, H - 430);
-    c.fillStyle = PAL.grassDark;
-    c.fillRect(0, 430, W, 5);
+    var lila = Game.FRIEND_DEFS[0];
+    var hop = Math.max(0, Math.sin(t / 22)) * 6;
+    E.softShadow(c, 300, 450, 20, 4, 0.22);
+    E.drawCharacter(c, 300, 450, Game.customization, 0, -1, 1.25, (t % 220) < 8, hop);
+    E.softShadow(c, 46, 452, 18, 4, 0.22);
+    E.drawCharacter(c, 46, 452, Game.friends && Game.friends[lila.id] ? Game.friends[lila.id].cust : lila.defaultCust,
+      0, 1, 1.1, (t % 260) < 8);
+    drawButterflies(c);
 
     /* Title */
-    var bob = Math.sin(t / 40) * 4;
+    var bob = Math.sin(t / 40) * 3;
+    c.save();
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    c.fillStyle = PAL.ink;
-    c.font = 'bold 30px "M PLUS Rounded 1c", sans-serif';
-    c.fillText(T('title'), W / 2 + 60, 108 + bob);
-    c.font = 'bold 52px "M PLUS Rounded 1c", sans-serif';
-    c.fillStyle = '#3b6b2a';
-    c.strokeStyle = PAL.cream;
-    c.lineWidth = 6;
     c.lineJoin = 'round';
-    c.strokeText(T('title2'), W / 2 + 60, 158 + bob);
-    c.fillText(T('title2'), W / 2 + 60, 158 + bob);
-    c.font = '16px "M PLUS Rounded 1c", sans-serif';
+    c.font = 'bold 30px ' + FONT;
+    c.strokeStyle = 'rgba(255, 250, 236, 0.92)';
+    c.lineWidth = 6;
+    c.strokeText(T('title'), TITLE_CX, 106 + bob);
     c.fillStyle = PAL.ink;
-    c.fillText(T('titleSubtitle'), W / 2 + 60, 198 + bob);
+    c.fillText(T('title'), TITLE_CX, 106 + bob);
+    fitFont(c, T('title2'), 360, 58, 'bold', 30);
+    c.fillStyle = 'rgba(36, 23, 8, 0.22)';
+    c.fillText(T('title2'), TITLE_CX + 2, 162 + bob + 4);
+    c.strokeStyle = PAL.cream;
+    c.lineWidth = 9;
+    c.strokeText(T('title2'), TITLE_CX, 162 + bob);
+    c.fillStyle = '#3b6b2a';
+    c.fillText(T('title2'), TITLE_CX, 162 + bob);
+    /* subtitle sits on a little cream ribbon so clouds never wash it out */
+    c.font = 'bold 15px ' + FONT;
+    var sw = c.measureText(T('titleSubtitle')).width + 30;
+    c.fillStyle = 'rgba(255, 244, 220, 0.85)';
+    E.roundRect(c, TITLE_CX - sw / 2, 200 + bob, sw, 26, 13);
+    c.fill();
+    c.fillStyle = '#5a7a3a';
+    c.fillText(T('titleSubtitle'), TITLE_CX, 214 + bob);
+    c.restore();
 
     if (confirmReset) {
       drawResetConfirm(c);
@@ -251,7 +259,7 @@
       return;
     }
 
-    button(c, TITLE_BTN.play, T('play'), { font: 20, activeFill: PAL.sun, fill: PAL.sun });
+    button(c, TITLE_BTN.play, T('play'), { font: 22, activeFill: PAL.sun, fill: PAL.sun, r: 12 });
     button(c, TITLE_BTN.how, T('howToPlay'), { font: 15 });
     button(c, TITLE_BTN.lang, T('language') + ': ' + T('langLabel'), { font: 12 });
     button(c, TITLE_BTN.sound, Game.audio.isMuted() ? T('soundOff') : T('soundOn'), { font: 12 });
@@ -260,14 +268,70 @@
     drawVersionStamp(c);
   }
 
-  function cloud(c, x, y, s) {
-    c.save();
-    c.translate(x, y);
-    c.scale(s, s);
-    E.fillEllipse(c, -34, 6, 30, 20, '#ffffff', false);
-    E.fillEllipse(c, 34, 8, 26, 17, '#ffffff', false);
-    E.fillEllipse(c, 0, -6, 40, 27, '#ffffff', false);
-    c.restore();
+  /* Grass band with tufts and flowers, painted once. */
+  function drawTitleGround(c) {
+    var gy = TITLE_GROUND, gh = H - gy;
+    var spr = E.getCachedSprite('titleGround', W, gh + 6, function (g) {
+      var rnd = E.seeded(77);
+      var gr = g.createLinearGradient(0, 6, 0, gh + 6);
+      gr.addColorStop(0, '#78bb51');
+      gr.addColorStop(1, '#5c9a3d');
+      g.fillStyle = gr;
+      g.fillRect(0, 6, W, gh);
+      g.fillStyle = 'rgba(75, 132, 51, 0.55)';
+      g.fillRect(0, 6, W, 3);
+      g.lineCap = 'round';
+      for (var i = 0; i < 110; i++) {
+        var x = rnd() * W, y = 14 + rnd() * (gh - 10);
+        var hgt = 4 + (y / gh) * 6 + rnd() * 3;
+        g.strokeStyle = rnd() < 0.55 ? 'rgba(66, 120, 44, 0.75)' : 'rgba(150, 210, 104, 0.85)';
+        g.lineWidth = 1.4;
+        for (var b = -1; b <= 1; b++) {
+          g.beginPath();
+          g.moveTo(x + b * 2, y);
+          g.quadraticCurveTo(x + b * 2.5, y - hgt * 0.6, x + b * 4.5, y - hgt * (b === 0 ? 1.15 : 0.85));
+          g.stroke();
+        }
+      }
+      var cols = ['#ff9ec4', '#ffd24a', '#fff4dc', '#b06aa8', '#8fd0e8'];
+      for (var f = 0; f < 30; f++) {
+        var fx = rnd() * W, fy = 18 + rnd() * (gh - 16), fr = 1.8 + rnd();
+        var col = cols[Math.floor(rnd() * cols.length)];
+        for (var q = 0; q < 5; q++) {
+          var a = q * Math.PI * 2 / 5;
+          E.fillEllipse(g, fx + Math.cos(a) * fr, fy + Math.sin(a) * fr, fr * 0.8, fr * 0.8, col, false);
+        }
+        E.fillEllipse(g, fx, fy, fr * 0.55, fr * 0.55, PAL.sun, false);
+      }
+    });
+    c.drawImage(spr, 0, gy - 6, spr.lw, spr.lh);
+  }
+
+  /* Two butterflies looping lazily over the grass. */
+  function drawButterflies(c) {
+    var cols = [PAL.peach, PAL.sky];
+    for (var i = 0; i < 2; i++) {
+      var k = t / (150 + i * 40) + i * 2.4;
+      var x = 360 + i * 300 + Math.sin(k) * 70;
+      var y = 380 + Math.sin(k * 2.3) * 22 - i * 14;
+      var flap = Math.abs(Math.sin(t / 4 + i));
+      c.save();
+      c.translate(x, y);
+      c.rotate(Math.cos(k) * 0.3);
+      c.fillStyle = cols[i];
+      c.strokeStyle = PAL.ink;
+      c.lineWidth = 1.2;
+      for (var sd = -1; sd <= 1; sd += 2) {
+        c.beginPath();
+        c.ellipse(sd * 4.5 * flap, -2, 5 * flap + 0.6, 6, 0, 0, Math.PI * 2);
+        c.fill(); c.stroke();
+        c.beginPath();
+        c.ellipse(sd * 3.5 * flap, 4, 3.5 * flap + 0.5, 4, 0, 0, Math.PI * 2);
+        c.fill(); c.stroke();
+      }
+      E.fillRound(c, -1, -6, 2, 12, 1, PAL.ink, false);
+      c.restore();
+    }
   }
 
   function drawInstructionsOverlay(c) {
@@ -319,8 +383,12 @@
 
   function drawVersionStamp(c) {
     c.save();
-    c.fillStyle = 'rgba(74, 51, 32, 0.45)';
     c.font = '11px "M PLUS Rounded 1c", sans-serif';
+    var vw = c.measureText(Game.VERSION || '').width + 12;
+    c.fillStyle = 'rgba(255, 244, 220, 0.6)';
+    E.roundRect(c, W - 2 - vw, H - 20, vw, 16, 8);
+    c.fill();
+    c.fillStyle = 'rgba(74, 51, 32, 0.6)';
     c.textAlign = 'right';
     c.textBaseline = 'bottom';
     c.fillText(Game.VERSION || '', W - 8, H - 6);
@@ -330,7 +398,13 @@
   /* ================================================================
      Intro
      ================================================================ */
-  var INTRO_BTN = { x: 320, y: 414, w: 160, h: 44 };
+  /* Story on a card at the left, a picture of the bare tree at the right. */
+  var INTRO = {
+    panel: { x: 24, y: 22, w: 462, h: 380 },
+    pic: { x: 504, y: 22, w: 272, h: 436 },
+    textW: 418,
+  };
+  var INTRO_BTN = { x: 175, y: 414, w: 160, h: 44 };
 
   function drawIntroScreen(c) {
     t++;
@@ -340,22 +414,156 @@
     c.fillStyle = g;
     c.fillRect(0, 0, W, H);
 
+    drawIntroPicture(c);
+
+    var P = INTRO.panel;
+    c.fillStyle = 'rgba(36, 23, 8, 0.16)';
+    E.roundRect(c, P.x, P.y + 4, P.w, P.h, 12);
+    c.fill();
+    panel(c, P.x, P.y, P.w, P.h, 'rgba(255, 248, 232, 0.97)');
+    c.fillStyle = 'rgba(123, 196, 90, 0.25)';
+    E.roundRect(c, P.x + 6, P.y + 6, P.w - 12, 46, 8);
+    c.fill();
+
+    var cx = P.x + P.w / 2;
+    c.fillStyle = '#3b6b2a';
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    fitFont(c, T('introTitle'), P.w - 40, 24, 'bold', 16);
+    c.fillText(T('introTitle'), cx, P.y + 30);
+
+    /* Keep the string's own line breaks (they are set on phrase
+       boundaries) unless a line is too wide for the card; then re-flow
+       that paragraph. */
+    c.fillStyle = PAL.ink;
+    c.font = '14px ' + FONT;
+    var paras = T('introText').split('\n\n');
+    var lines = [];
+    for (var i = 0; i < paras.length; i++) {
+      var pl = paras[i].split('\n');
+      for (var q = 0; q < pl.length; q++) {
+        if (c.measureText(pl[q]).width > INTRO.textW) {
+          pl = layoutLines(c, paras[i].replace(/([、。])\n/g, '$1').replace(/\n/g, ' '), INTRO.textW);
+          break;
+        }
+      }
+      if (i > 0) lines.push(null);
+      lines = lines.concat(pl);
+    }
+    var top = P.y + 66, bottom = P.y + P.h - 16;
+    var lh = 21, gap = 10, total = 0;
+    for (var k = 0; k < lines.length; k++) total += lines[k] === null ? gap : lh;
+    if (total > bottom - top) { lh = 19; gap = 6; total = 0; for (k = 0; k < lines.length; k++) total += lines[k] === null ? gap : lh; }
+    var y = top + Math.max(0, (bottom - top - total) / 2) + lh / 2;
+    for (k = 0; k < lines.length; k++) {
+      if (lines[k] === null) { y += gap; continue; }
+      c.fillText(lines[k], cx, y);
+      y += lh;
+    }
+
+    button(c, INTRO_BTN, T('continueBtn'), { fill: PAL.sun, font: 16 });
+  }
+
+  /* Little framed outdoor scene -- sky, sun, a far hill and grass -- shared
+     by the intro picture and the designer previews. Caller clips. */
+  function sceneBackdrop(c, x, y, w, h, gy) {
+    var sky = c.createLinearGradient(0, y, 0, gy);
+    sky.addColorStop(0, '#9cd4ea');
+    sky.addColorStop(1, '#e4f3dc');
+    c.fillStyle = sky;
+    c.fillRect(x, y, w, gy - y);
+    var sx = x + w - 50, sy = y + 50;
+    var sg = c.createRadialGradient(sx, sy, 12, sx, sy, 60);
+    sg.addColorStop(0, 'rgba(255, 236, 160, 0.5)');
+    sg.addColorStop(1, 'rgba(255, 236, 160, 0)');
+    c.fillStyle = sg;
+    c.fillRect(sx - 60, sy - 60, 120, 120);
+    E.fillEllipse(c, sx, sy, 22, 22, PAL.sun, false);
+    E.fillEllipse(c, sx - 6, sy - 6, 10, 8, 'rgba(255,255,255,0.35)', false);
+    c.fillStyle = '#a3cd90';
+    c.beginPath();
+    c.moveTo(x, gy - 30);
+    c.quadraticCurveTo(x + w * 0.4, gy - 70, x + w, gy - 24);
+    c.lineTo(x + w, gy); c.lineTo(x, gy);
+    c.fill();
+    var gg = c.createLinearGradient(0, gy, 0, y + h);
+    gg.addColorStop(0, '#78bb51');
+    gg.addColorStop(1, '#5c9a3d');
+    c.fillStyle = gg;
+    c.fillRect(x, gy, w, y + h - gy);
+    c.fillStyle = 'rgba(75, 132, 51, 0.55)';
+    c.fillRect(x, gy, w, 3);
+  }
+
+  /* Colour chip; the chosen one gets a thick ring and a tick. */
+  function swatch(c, r, col, sel) {
+    var hot = !sel && pointerOver(c, r.x, r.y, r.w, r.h);
+    c.fillStyle = col;
+    E.roundRect(c, r.x, r.y, r.w, r.h, 8);
+    c.fill();
+    c.fillStyle = 'rgba(255, 255, 255, 0.25)';
+    E.roundRect(c, r.x + 3, r.y + 3, r.w - 6, r.h * 0.36, 5);
+    c.fill();
+    E.roundRect(c, r.x, r.y, r.w, r.h, 8);
+    E.ink(c, sel ? 4 : (hot ? 3 : 1.8));
+    if (sel) {
+      var cx = r.x + r.w - 6, cy = r.y + 6;
+      E.fillEllipse(c, cx, cy, 9, 9, PAL.leaf);
+      c.strokeStyle = PAL.cream;
+      c.lineWidth = 2.4;
+      c.beginPath();
+      c.moveTo(cx - 4, cy); c.lineTo(cx - 1, cy + 3.5); c.lineTo(cx + 4.5, cy - 3.5);
+      c.stroke();
+    }
+  }
+
+  function sectionLabel(c, text, x, y) {
+    c.fillStyle = 'rgba(74,51,32,0.7)';
+    c.font = 'bold 12px ' + FONT;
+    c.textAlign = 'left';
+    c.textBaseline = 'middle';
+    c.fillText(text, x, y);
+  }
+
+  function drawIntroPicture(c) {
+    var R = INTRO.pic;
+    c.fillStyle = 'rgba(36, 23, 8, 0.16)';
+    E.roundRect(c, R.x, R.y + 4, R.w, R.h, 12);
+    c.fill();
     c.save();
-    c.globalAlpha = 0.25;
-    c.translate(660, 430);
-    c.scale(0.5, 0.5);
+    E.roundRect(c, R.x, R.y, R.w, R.h, 12);
+    c.clip();
+    var gy = R.y + R.h - 46;
+    sceneBackdrop(c, R.x, R.y, R.w, R.h, gy);
+
+    /* The bare tree, waiting */
+    var tx = R.x + 172;
+    E.softShadow(c, tx, gy + 4, 70, 6, 0.2);
+    c.save();
+    c.translate(tx, gy + 4);
+    c.scale(0.62, 0.62);
     Game.tree.drawTree(c, 0, 0, 0, Game.EXT_DEFAULT, t, false);
     c.restore();
 
-    c.fillStyle = PAL.ink;
-    c.textAlign = 'center';
-    c.textBaseline = 'middle';
-    c.font = 'bold 26px "M PLUS Rounded 1c", sans-serif';
-    c.fillText(T('introTitle'), W / 2, 52);
-    c.font = '14px "M PLUS Rounded 1c", sans-serif';
-    multiline(c, T('introText'), W / 2, 104, 21);
-
-    button(c, INTRO_BTN, T('continueBtn'), { fill: PAL.sun, font: 16 });
+    /* Momoko looking up at it, dreaming of the finished house up in the
+       open sky, clear of the canopy */
+    var mx = R.x + 40, my = gy + 24;
+    E.softShadow(c, mx, my, 16, 4, 0.22);
+    E.drawCharacter(c, mx, my, Game.customization, 0, 1, 1.15, (t % 200) < 8);
+    var bob = Math.sin(t / 30) * 2;
+    var dots = [[52, 300, 3], [56, 254, 4], [60, 204, 5], [64, 152, 6.5]];
+    for (var d = 0; d < dots.length; d++) {
+      E.fillEllipse(c, R.x + dots[d][0], R.y + dots[d][1] + bob, dots[d][2], dots[d][2], '#ffffff');
+    }
+    E.fillEllipse(c, R.x + 82, R.y + 88 + bob, 50, 40, '#ffffff');
+    c.save();
+    c.translate(R.x + 82, R.y + 116 + bob);
+    c.scale(0.15, 0.15);
+    Game.tree.drawTree(c, 0, 0, Game.BUILD_STAGES.length, Game.EXT_DEFAULT, t, false);
+    c.restore();
+    c.restore();
+    E.roundRect(c, R.x, R.y, R.w, R.h, 12);
+    E.ink(c, 2);
   }
 
   function handleIntroClick(mx, my) {
@@ -451,13 +659,11 @@
     c.beginPath();
     E.roundRect(c, CUST.previewX + 2, CUST.previewY + 2, CUST.previewW - 4, CUST.previewH - 4, 9);
     c.clip();
-    /* grass strip under the preview character */
-    c.fillStyle = PAL.grass;
-    c.fillRect(CUST.previewX, CUST.previewY + CUST.previewH - 62, CUST.previewW, 62);
-    c.fillStyle = PAL.grassDark;
-    c.fillRect(CUST.previewX, CUST.previewY + CUST.previewH - 62, CUST.previewW, 4);
+    sceneBackdrop(c, CUST.previewX, CUST.previewY, CUST.previewW, CUST.previewH,
+      CUST.previewY + CUST.previewH - 62);
     var pcx = CUST.previewX + CUST.previewW / 2;
     var pcy = CUST.previewY + CUST.previewH - 40;
+    E.softShadow(c, pcx, pcy, 40, 8, 0.24);
     var walkFrame = Math.floor(t / 9) % 4 + 1;
     E.drawCharacter(c, pcx, pcy, cust, walkFrame, 1, 2.35, false);
     c.restore();
@@ -489,11 +695,7 @@
     /* Colour swatches */
     if (tab.colorField && tab.colors) {
       for (var s = 0; s < tab.colors.length; s++) {
-        var sr = swatchRect(s);
-        c.fillStyle = tab.colors[s];
-        E.roundRect(c, sr.x, sr.y, sr.w, sr.h, 8);
-        c.fill();
-        E.ink(c, cust[tab.colorField] === tab.colors[s] ? 4 : (pointerOver(c, sr.x, sr.y, sr.w, sr.h) ? 3 : 1.8));
+        swatch(c, swatchRect(s), tab.colors[s], cust[tab.colorField] === tab.colors[s]);
       }
     }
 
@@ -715,7 +917,7 @@
   var SHOP = {
     tabY: 72, tabH: 36, tabW: 150, tabGap: 8, tabX: 167,   /* (800 - 3*150 - 2*8) / 2 */
     matCols: 7, matCellW: 98, matCellH: 104, matY: 116,
-    furCols: 8, furCellW: 94, furCellH: 70, furY: 118,
+    furCols: 9, furCellW: 86, furCellH: 74, furY: 112,
     bagPanel: { x: 12, y: 352, w: 452, h: 114 },
     listPanel: { x: 476, y: 352, w: 312, h: 114 },
     slot: { x: 20, y: 384, size: 54, gap: 8 },
@@ -790,19 +992,16 @@
     c.fillStyle = g;
     c.fillRect(0, 0, W, H);
 
-    /* Plank wall behind the shelves */
-    c.save();
-    c.globalAlpha = 0.18;
-    c.strokeStyle = PAL.ink;
-    c.lineWidth = 2;
-    for (var wy = 70; wy < 350; wy += 26) {
-      c.beginPath(); c.moveTo(0, wy); c.lineTo(W, wy); c.stroke();
-    }
-    c.restore();
+    drawShopWall(c);
 
     /* Banner */
-    c.fillStyle = '#3b2a16';
+    var bg = c.createLinearGradient(0, 0, 0, 60);
+    bg.addColorStop(0, '#4a3520');
+    bg.addColorStop(1, '#33240f');
+    c.fillStyle = bg;
     c.fillRect(0, 0, W, 60);
+    c.fillStyle = 'rgba(255, 210, 74, 0.35)';
+    c.fillRect(0, 58, W, 2);
     c.fillStyle = PAL.sun;
     c.font = 'bold 22px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'left';
@@ -835,10 +1034,67 @@
     drawBagPanel(c);
     drawBuildList(c);
 
-    c.fillStyle = 'rgba(255,244,220,0.8)';
     c.font = '12px "M PLUS Rounded 1c", sans-serif';
+    var hw = c.measureText(T('shopHint')).width + 24;
+    c.fillStyle = 'rgba(36, 23, 8, 0.55)';
+    E.roundRect(c, W / 2 - hw / 2, 336, hw, 15, 7.5);
+    c.fill();
+    c.fillStyle = PAL.cream;
     c.textAlign = 'center';
-    c.fillText(T('shopHint'), W / 2, 340);
+    c.textBaseline = 'middle';
+    c.fillText(T('shopHint'), W / 2, 344);
+  }
+
+  /* Plank wall with a shelf board under each row of goods, and bunting
+     strung under the banner. The wall is static, so it is cached. */
+  var BUNTING = [PAL.peach, PAL.sun, PAL.leafLight, PAL.sky, '#b06aa8'];
+  function drawShopWall(c) {
+    var spr = E.getCachedSprite('shopWall', W, 290, function (g) {
+      var rnd = E.seeded(55);
+      g.strokeStyle = 'rgba(74, 51, 32, 0.16)';
+      g.lineWidth = 2;
+      for (var x = 0; x < W; x += 64) {
+        g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 290); g.stroke();
+      }
+      for (var k = 0; k < 14; k++) {
+        var kx = rnd() * W, ky = 20 + rnd() * 250;
+        g.fillStyle = 'rgba(74, 51, 32, 0.14)';
+        g.beginPath(); g.ellipse(kx, ky, 5, 3, 0, 0, Math.PI * 2); g.fill();
+      }
+      for (var gl = 0; gl < 40; gl++) {
+        var gx = rnd() * W, gy = rnd() * 290;
+        g.strokeStyle = 'rgba(74, 51, 32, 0.08)';
+        g.beginPath(); g.moveTo(gx, gy); g.lineTo(gx + 2, gy + 30 + rnd() * 40); g.stroke();
+      }
+    });
+    c.drawImage(spr, 0, 60, spr.lw, spr.lh);
+
+    var rows = shopTab === 'materials' ? [SHOP.matY + SHOP.matCellH, SHOP.matY + 2 * SHOP.matCellH]
+      : shopTab === 'furniture' ? [SHOP.furY + SHOP.furCellH, SHOP.furY + 2 * SHOP.furCellH, SHOP.furY + 3 * SHOP.furCellH]
+      : [324];
+    for (var r = 0; r < rows.length; r++) {
+      var y = rows[r] - 3;
+      c.fillStyle = 'rgba(36, 23, 8, 0.25)';
+      c.fillRect(6, y + 6, W - 12, 4);
+      E.fillRound(c, 6, y, W - 12, 7, 2, '#8a6340');
+      c.fillStyle = 'rgba(255, 230, 180, 0.3)';
+      c.fillRect(8, y + 1, W - 16, 2);
+    }
+
+    /* bunting, gently swaying */
+    c.strokeStyle = PAL.ink;
+    c.lineWidth = 1.4;
+    c.beginPath();
+    c.moveTo(0, 62);
+    c.quadraticCurveTo(W / 2, 66, W, 62);
+    c.stroke();
+    for (var f = 0; f < 21; f++) {
+      var fx = 10 + f * 38;
+      var u = fx / W;
+      var fy = 62 + 8 * u * (1 - u);       /* on the curve above */
+      var sw = Math.sin(t / 30 + f) * 1.5;
+      E.fillPath(c, [[fx - 6, fy], [fx + 6, fy], [fx + sw, fy + 9]], BUNTING[f % BUNTING.length], true);
+    }
   }
 
   function drawShopGrid(c) {
@@ -863,12 +1119,12 @@
         c.textBaseline = 'middle';
         c.fillText(T('mat_' + cell.type), cell.x + cell.w / 2, cell.y + cell.h - 22);
       } else if (cell.kind === 'furniture') {
-        drawFurniture(c, cell.type, cell.x + cell.w / 2, cell.y + cell.h - 24, 'palette');
+        drawFurnitureIcon(c, cell.type, cell.x + cell.w / 2, cell.y + 31, cell.w - 22, 38);
         c.fillStyle = PAL.ink;
-        fitFont(c, T('furniture_' + cell.type), cell.w - 14, 11, 'bold', 9);
+        fitFont(c, T('furniture_' + cell.type), cell.w - 16, 11, 'bold', 8);
         c.textAlign = 'center';
         c.textBaseline = 'middle';
-        c.fillText(T('furniture_' + cell.type), cell.x + cell.w / 2, cell.y + cell.h - 12);
+        c.fillText(T('furniture_' + cell.type), cell.x + cell.w / 2, cell.y + cell.h - 14);
       } else {
         drawFurniture(c, 'piano', cell.x + cell.w / 2, cell.y + cell.h - 34, 'placed');
         c.fillStyle = PAL.ink;
@@ -916,9 +1172,10 @@
     }
 
     if (Game.bag.items.length === 0) {
-      c.fillStyle = 'rgba(74,51,32,0.6)';
-      c.font = '11px "M PLUS Rounded 1c", sans-serif';
+      c.fillStyle = 'rgba(74,51,32,0.65)';
+      c.font = '12px "M PLUS Rounded 1c", sans-serif';
       c.textAlign = 'left';
+      fitFont(c, T('shopCartEmpty'), p.w - 146, 12, '', 10);
       c.fillText(T('shopCartEmpty'), p.x + 132, p.y + 20);
     }
 
@@ -929,7 +1186,7 @@
 
   function drawBagItemIcon(c, item, cx, cy, size) {
     if (item.kind === 'material') E.drawMaterialIcon(c, item.type, cx, cy, size);
-    else drawFurniture(c, item.type, cx, cy + size * 0.36, 'palette');
+    else drawFurnitureIcon(c, item.type, cx, cy, size, size);
   }
 
   function drawBuildList(c) {
@@ -943,6 +1200,10 @@
     var stage = currentStage();
     if (!stage) {
       c.fillText(T('buildDone'), p.x + 14, p.y + 24);
+      c.fillStyle = 'rgba(74,51,32,0.75)';
+      c.font = '12px ' + FONT;
+      var hl = layoutLines(c, T('shopDoneHint'), p.w - 28);
+      for (var h = 0; h < hl.length; h++) c.fillText(hl[h], p.x + 14, p.y + 52 + h * 18);
       return;
     }
     c.fillText(T('shopBuildList') + ': ' + T('stage_' + stage.id), p.x + 14, p.y + 20);
@@ -1117,8 +1378,8 @@
       c.fillText(T('buildDone'), px + 14, py + ph / 2 + 1);
       return;
     }
-    c.font = 'bold 11px "M PLUS Rounded 1c", sans-serif';
-    c.fillStyle = 'rgba(74,51,32,0.7)';
+    c.font = 'bold 12px "M PLUS Rounded 1c", sans-serif';
+    c.fillStyle = 'rgba(74,51,32,0.75)';
     c.fillText(T('buildNext'), px + 12, py + 15);
     fitFont(c, T('stage_' + stage.id), pw - 24, 15, 'bold');
     c.fillStyle = PAL.ink;
@@ -1127,12 +1388,12 @@
     var remaining = remainingNeeds(stage);
     var keys = Object.keys(stage.needs);
     var ix = px + 12;
-    c.font = 'bold 10px "M PLUS Rounded 1c", sans-serif';
+    c.font = 'bold 12px "M PLUS Rounded 1c", sans-serif';
     for (var i = 0; i < keys.length && i < 5; i++) {
       var left = remaining[keys[i]] || 0;
       E.drawMaterialIcon(c, keys[i], ix + 8, py + 50, 17);
       c.fillStyle = left === 0 ? PAL.leaf : PAL.ink;
-      c.fillText(left === 0 ? '✓' : ('×' + left), ix + 19, py + 52);
+      c.fillText(left === 0 ? '✓' : ('×' + left), ix + 19, py + 51);
       ix += 44;
     }
   }
@@ -1442,8 +1703,9 @@
     c.beginPath();
     E.roundRect(c, EXT.previewX + 2, EXT.previewY + 2, EXT.previewW - 4, EXT.previewH - 4, 9);
     c.clip();
-    c.fillStyle = PAL.grass;
-    c.fillRect(EXT.previewX, EXT.previewY + EXT.previewH - 48, EXT.previewW, 48);
+    sceneBackdrop(c, EXT.previewX, EXT.previewY, EXT.previewW, EXT.previewH,
+      EXT.previewY + EXT.previewH - 48);
+    E.softShadow(c, EXT.previewX + EXT.previewW / 2, EXT.previewY + EXT.previewH - 38, 100, 8, 0.2);
     Game.tree.drawTreePreview(c, EXT.previewX + EXT.previewW / 2,
       EXT.previewY + EXT.previewH - 40, 0.72, Game.BUILD_STAGES.length, ext, t);
     c.restore();
@@ -1501,12 +1763,9 @@
     }
 
     if (tab.colorField && tab.colors) {
+      sectionLabel(c, T('colourLabel'), EXT.swatchX, EXT.swatchY - 16);
       for (var s = 0; s < tab.colors.length; s++) {
-        var sr = extSwatchRect(s);
-        c.fillStyle = tab.colors[s];
-        E.roundRect(c, sr.x, sr.y, sr.w, sr.h, 8);
-        c.fill();
-        E.ink(c, ext[tab.colorField] === tab.colors[s] ? 4 : (pointerOver(c, sr.x, sr.y, sr.w, sr.h) ? 3 : 1.8));
+        swatch(c, extSwatchRect(s), tab.colors[s], ext[tab.colorField] === tab.colors[s]);
       }
     }
 
@@ -1824,6 +2083,7 @@
       c.beginPath(); c.moveTo(0, wy); c.lineTo(W, wy); c.stroke();
     }
     c.restore();
+    drawWallpaper(c, rd);
     var cg = c.createLinearGradient(0, 0, W, 0);
     cg.addColorStop(0, 'rgba(74, 51, 32, 0.16)');
     cg.addColorStop(0.18, 'rgba(74, 51, 32, 0)');
@@ -1869,6 +2129,25 @@
       c.beginPath(); c.moveTo(0, yy); c.lineTo(W, yy); c.stroke();
     }
     c.restore();
+    /* Sunlight from the two windows lying across the floorboards */
+    c.save();
+    c.globalCompositeOperation = 'lighter';
+    for (var lw = 0; lw < ROOM.windows.length; lw++) {
+      var wx = ROOM.windows[lw];
+      var lg = c.createLinearGradient(0, ROOM.floorY, 0, ROOM.floorY + 150);
+      lg.addColorStop(0, 'rgba(255, 230, 160, 0.16)');
+      lg.addColorStop(1, 'rgba(255, 230, 160, 0)');
+      c.fillStyle = lg;
+      c.beginPath();
+      c.moveTo(wx - 50, ROOM.floorY);
+      c.lineTo(wx + 50, ROOM.floorY);
+      c.lineTo(wx + 130, ROOM.floorY + 150);
+      c.lineTo(wx - 10, ROOM.floorY + 150);
+      c.closePath();
+      c.fill();
+    }
+    c.restore();
+
     /* Skirting board with a lit top edge and a contact shadow on the floor */
     c.fillStyle = PAL.bark;
     c.fillRect(0, ROOM.floorY - 12, W, 12);
@@ -1897,8 +2176,13 @@
         if (fw) E.softShadow(c, e.item.x, e.item.y + 1, fw, Math.max(4, fw * 0.17), 0.3);
         drawFurniture(c, e.item.type, e.item.x, e.item.y, 'placed', e.item.flip);
       }
-      else if (e.friend) E.drawCharacter(c, fs.x, fs.y, Game.friends[e.friend.id].cust, 0, -1, 1, false);
-      else E.drawCharacter(c, p.x, p.y, Game.customization, p.frame, p.facing, 1, p.blink);
+      else if (e.friend) {
+        E.softShadow(c, fs.x, fs.y + 1, 18, 4, 0.26);
+        E.drawCharacter(c, fs.x, fs.y, Game.friends[e.friend.id].cust, 0, -1, 1, false);
+      } else {
+        E.softShadow(c, p.x, p.y + 1, 18, 4, 0.26);
+        E.drawCharacter(c, p.x, p.y, Game.customization, p.frame, p.facing, 1, p.blink);
+      }
     }
 
     /* Prompts for whatever she is standing next to */
@@ -1948,6 +2232,39 @@
     }
 
     drawToast(c);
+  }
+
+  /* A faint motif on each room's wall, in its accent colour: leaves in the
+     main room, stars in the bedroom, gingham in the kitchen, notes in the
+     music room. Cached per room. */
+  function drawWallpaper(c, rd) {
+    var h = ROOM.floorY - ROOM.wallTop;
+    var spr = E.getCachedSprite('wallpaper-' + rd.id, W, h, function (g) {
+      g.globalAlpha = 0.2;
+      g.fillStyle = rd.accent;
+      g.strokeStyle = rd.accent;
+      var x, y, row = 0;
+      if (rd.id === 'kitchen') {
+        for (x = 0; x < W; x += 24) g.fillRect(x, 0, 12, h);
+        g.globalAlpha = 0.12;
+        for (y = 0; y < h; y += 24) g.fillRect(0, y, W, 12);
+        return;
+      }
+      for (y = 22; y < h; y += 34, row++) {
+        for (x = (row % 2) * 30 + 14; x < W; x += 60) {
+          if (rd.id === 'bed') {
+            E.star(g, x, y, 5);
+          } else if (rd.id === 'music') {
+            g.beginPath(); g.ellipse(x, y + 5, 4, 3, -0.4, 0, Math.PI * 2); g.fill();
+            g.lineWidth = 1.6;
+            g.beginPath(); g.moveTo(x + 3.5, y + 4); g.lineTo(x + 3.5, y - 8); g.lineTo(x + 8, y - 5); g.stroke();
+          } else {
+            g.beginPath(); g.ellipse(x, y, 3, 6, 0.6, 0, Math.PI * 2); g.fill();
+          }
+        }
+      }
+    });
+    c.drawImage(spr, 0, ROOM.wallTop, spr.lw, spr.lh);
   }
 
   function drawRoomDoor(c) {
@@ -2068,12 +2385,10 @@
       /* Shop-sized icon, shrunk a touch so the tallest piece clears the badge */
       c.save();
       if (!owned) c.globalAlpha = 0.45;
-      c.translate(ir.x + ir.w / 2, ir.y + ir.h - 19);
-      c.scale(0.86, 0.86);
-      drawFurniture(c, items[k].type, 0, 0, 'palette');
+      drawFurnitureIcon(c, items[k].type, ir.x + ir.w / 2, ir.y + 30, ir.w - 26, 36);
       c.restore();
 
-      c.fillStyle = owned ? PAL.ink : 'rgba(74,51,32,0.6)';
+      c.fillStyle = owned ? PAL.ink : 'rgba(255,244,220,0.8)';
       fitFont(c, T('furniture_' + items[k].type), ir.w - 8, 10, 'bold', 8);
       c.textAlign = 'center';
       c.textBaseline = 'middle';
@@ -2208,6 +2523,44 @@
      Furniture painter
      Anchor is bottom-centre. mode: 'placed' (full) or 'palette' (small).
      ================================================================ */
+  /* Pieces differ wildly in height (a cushion vs a fridge) and wall pieces
+     hang well above their anchor, so icons are fitted to their real ink
+     bounds, measured once per piece on a scratch canvas. */
+  var iconBounds = {};
+  function furnitureBounds(type) {
+    if (iconBounds[type]) return iconBounds[type];
+    var S = 160, ox = 80, oy = 120;
+    var cv = document.createElement('canvas');
+    cv.width = S; cv.height = S;
+    var g = cv.getContext('2d');
+    drawFurniture(g, type, ox, oy, 'palette');
+    var d = g.getImageData(0, 0, S, S).data;
+    var x0 = S, y0 = S, x1 = -1, y1 = -1;
+    for (var y = 0; y < S; y++) {
+      for (var x = 0; x < S; x++) {
+        if (d[(y * S + x) * 4 + 3] < 40) continue;
+        if (x < x0) x0 = x; if (x > x1) x1 = x;
+        if (y < y0) y0 = y; if (y > y1) y1 = y;
+      }
+    }
+    var b = x1 < 0 ? { x: -20, y: -30, w: 40, h: 30 }
+                   : { x: x0 - ox, y: y0 - oy, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+    iconBounds[type] = b;
+    return b;
+  }
+
+  /* Palette-sized piece, centred in a bw x bh box at (cx, cy). Never grown
+     past 1.3x, so small things stay small-looking. */
+  function drawFurnitureIcon(c, type, cx, cy, bw, bh) {
+    var b = furnitureBounds(type);
+    var k = Math.min(1.3, bw / b.w, bh / b.h);
+    c.save();
+    c.translate(cx, cy);
+    c.scale(k, k);
+    drawFurniture(c, type, -(b.x + b.w / 2), -(b.y + b.h / 2), 'palette');
+    c.restore();
+  }
+
   function drawFurniture(c, type, x, y, mode, flip) {
     var s = mode === 'palette' ? 0.52 : 1;
     var absY = y;               /* pre-translate, so hanging pieces can reach the ceiling */

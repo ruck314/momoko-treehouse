@@ -484,7 +484,7 @@
     c.restore();
   }
 
-  function drawMeadowSky(c, camX, t, groundY, worldW) {
+  function drawMeadowSky(c, camX, t, groundY, worldW, sunX) {
     var Wv = VIEW_W;
     var g = c.createLinearGradient(0, 0, 0, groundY);
     g.addColorStop(0, '#9cd4ea');
@@ -495,14 +495,15 @@
     c.fillRect(0, 0, Wv, groundY);
 
     /* Sun with a soft halo. It sits between the build HUD (left) and the
-       bag (right), not behind them. */
-    var sg = c.createRadialGradient(470, 62, 20, 470, 62, 92);
+       bag (right), not behind them; the title screen moves it aside. */
+    var sx0 = sunX === undefined ? 470 : sunX;
+    var sg = c.createRadialGradient(sx0, 62, 20, sx0, 62, 92);
     sg.addColorStop(0, 'rgba(255, 236, 160, 0.55)');
     sg.addColorStop(1, 'rgba(255, 236, 160, 0)');
     c.fillStyle = sg;
-    c.fillRect(370, 0, 200, 160);
-    fillEllipse(c, 470, 62, 30, 30, PAL.sun, false);
-    fillEllipse(c, 462, 54, 14, 12, 'rgba(255,255,255,0.35)', false);
+    c.fillRect(sx0 - 100, 0, 200, 160);
+    fillEllipse(c, sx0, 62, 30, 30, PAL.sun, false);
+    fillEllipse(c, sx0 - 8, 54, 14, 12, 'rgba(255,255,255,0.35)', false);
 
     var wrap = Wv + 340;
     for (var i = 0; i < CLOUDS.length; i++) {

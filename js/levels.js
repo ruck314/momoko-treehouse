@@ -156,7 +156,7 @@
     ],
     kitchen: [
       { type: 'table', x: 420, y: 336, flip: false },
-      { type: 'fridge', x: 680, y: 330, flip: false },
+      { type: 'fridge', x: 640, y: 330, flip: false },
     ],
     music: [
       { type: 'discoBall', x: 400, y: 300, flip: false },

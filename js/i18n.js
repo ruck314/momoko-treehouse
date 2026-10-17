@@ -56,6 +56,8 @@
       /* ---- Build stages ---- */
       buildNext: 'Building next:',
       buildDone: 'The tree house is finished!',
+      shopDoneHint: 'Now pick out furniture to make every room cosy!',
+      colourLabel: 'Colour',
       stage_platform: 'Platform',
       stage_walls: 'Walls',
       stage_roof: 'Roof',
@@ -302,6 +304,8 @@
       /* ---- Build stages ---- */
       buildNext: 'つぎに つくるもの:',
       buildDone: 'ツリーハウス かんせい！',
+      shopDoneHint: 'こんどは かぐを えらんで、おへやを すてきに しよう！',
+      colourLabel: 'いろ',
       stage_platform: 'ゆか',
       stage_walls: 'かべ',
       stage_roof: 'やね',

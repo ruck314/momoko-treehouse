@@ -42,32 +42,61 @@
 
   /* ---- Base tree (always painted) ---- */
 
+  /* One clump of foliage: shaded underside, sunlit top-left and a few
+     leaf scallops, so the canopy reads as rounded masses rather than
+     flat discs. The light comes from the upper left, like the sun. */
+  function leafClump(c, cx, cy, rx, ry, col) {
+    E.fillEllipse(c, cx, cy, rx, ry, col, false);
+    c.save();
+    c.beginPath();
+    c.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    c.clip();
+    E.fillEllipse(c, cx + rx * 0.18, cy + ry * 0.62, rx * 1.05, ry * 0.6, E.shade(col, -18), false);
+    E.fillEllipse(c, cx - rx * 0.3, cy - ry * 0.42, rx * 0.5, ry * 0.36, E.shade(col, 16), false);
+    c.fillStyle = E.shade(col, 26);
+    var leaves = [[-0.52, -0.2], [-0.12, -0.6], [0.3, -0.38], [-0.3, 0.1]];
+    for (var i = 0; i < leaves.length; i++) {
+      c.beginPath();
+      c.arc(cx + leaves[i][0] * rx, cy + leaves[i][1] * ry, Math.max(3, rx * 0.09), Math.PI, Math.PI * 2);
+      c.fill();
+    }
+    c.restore();
+    c.beginPath();
+    c.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    E.ink(c, 2);
+  }
+
   function canopyBack(c, a) {
     var x = a.x, g = a.groundY;
-    E.fillEllipse(c, x - 96, g - 268, 66, 52, PAL.leafDark);
-    E.fillEllipse(c, x + 100, g - 258, 62, 50, PAL.leafDark);
-    E.fillEllipse(c, x - 34, g - 316, 76, 60, PAL.leaf);
-    E.fillEllipse(c, x + 52, g - 322, 70, 56, PAL.leaf);
-    E.fillEllipse(c, x + 6, g - 352, 62, 48, PAL.leafLight);
+    leafClump(c, x - 96, g - 268, 66, 52, PAL.leafDark);
+    leafClump(c, x + 100, g - 258, 62, 50, PAL.leafDark);
+    leafClump(c, x - 34, g - 316, 76, 60, PAL.leaf);
+    leafClump(c, x + 52, g - 322, 70, 56, PAL.leaf);
+    leafClump(c, x + 6, g - 352, 62, 48, PAL.leafLight);
   }
 
   function canopyFront(c, a, t) {
     var x = a.x, g = a.groundY;
     var sway = Math.sin(t / 70) * 2;
-    c.save();
-    c.globalAlpha = 0.95;
-    E.fillEllipse(c, x - 118 + sway, g - 300, 42, 32, PAL.leafLight);
-    E.fillEllipse(c, x + 126 - sway, g - 288, 38, 30, PAL.leafLight);
-    c.restore();
+    leafClump(c, x - 118 + sway, g - 300, 42, 32, PAL.leafLight);
+    leafClump(c, x + 126 - sway, g - 288, 38, 30, PAL.leafLight);
   }
 
   function trunk(c, a) {
     var x = a.x, g = a.groundY;
     /* Root flare, then a tapering trunk. */
-    E.fillPath(c, [
+    var outline = [
       [x - 46, g], [x - 34, g - 40], [x - 28, a.trunkTop + 40], [x - 20, a.trunkTop],
       [x + 20, a.trunkTop], [x + 28, a.trunkTop + 40], [x + 34, g - 40], [x + 46, g],
-    ], PAL.bark);
+    ];
+    E.fillPath(c, outline, PAL.bark, true, false);
+    /* Round it off: sunlit on the left, in shade on the right. */
+    var sh = c.createLinearGradient(x - 40, 0, x + 40, 0);
+    sh.addColorStop(0, 'rgba(255, 228, 180, 0.16)');
+    sh.addColorStop(0.45, 'rgba(255, 228, 180, 0)');
+    sh.addColorStop(0.62, 'rgba(36, 23, 8, 0)');
+    sh.addColorStop(1, 'rgba(36, 23, 8, 0.3)');
+    E.fillPath(c, outline, sh);
 
     /* Bark grain */
     c.save();

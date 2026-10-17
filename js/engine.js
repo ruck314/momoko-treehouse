@@ -13,7 +13,7 @@
   var GAME_X = 0, GAME_Y = 0;
 
   /* Bump alongside CACHE_NAME in sw.js and tag the matching git release. */
-  Game.VERSION = 'v1.4.0';
+  Game.VERSION = 'v1.5.0';
 
   var canvas, ctx;
 
@@ -264,7 +264,8 @@
     var M = Game.MEADOW;
     var a = Game.tree.anchors(M.tree.x, M.tree.groundY);
     var list = [
-      { id: 'shop', x: M.shop.x + 58, r: 70, labelKey: 'promptShop', promptY: M.groundY - 150 },
+      /* Above the roof: lower down it covers the shop's own sign. */
+      { id: 'shop', x: M.shop.x + 58, r: 70, labelKey: 'promptShop', promptY: M.groundY - 254 },
       { id: 'build', x: M.tree.x + 10, r: 78, labelKey: 'promptBuild', promptY: M.groundY - 120 },
     ];
     if (Game.flags.canEnter) {
@@ -669,8 +670,10 @@
     }
 
     Game.ui.drawCarryOverlay(c, player, camX);
-    /* The cutscene's banner takes the top of the screen on its own. */
-    if (state !== State.BUILD_CUTSCENE) {
+    /* The cutscene's banner takes the top of the screen on its own, and
+       under the pause card the HUD would only sit beneath the Game Center
+       link. */
+    if (state !== State.BUILD_CUTSCENE && state !== State.PAUSED) {
       Game.ui.drawBuildHud(c);
       Game.ui.drawBagHud(c);
     }
