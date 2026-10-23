@@ -1216,13 +1216,7 @@
       c.fillText(T('furniture_piano'), s.x + 118, s.y + s.size / 2);
     } else {
       for (var i = 0; i < Game.bag.MAX; i++) {
-        var sx = s.x + i * (s.size + s.gap);
-        var item = Game.bag.items[i];
-        c.fillStyle = item ? '#f6e6c8' : 'rgba(74,51,32,0.12)';
-        E.roundRect(c, sx, s.y, s.size, s.size, 8);
-        c.fill();
-        E.ink(c, item ? 2 : 1.4);
-        if (item) drawBagItemIcon(c, item, sx + s.size / 2, s.y + s.size / 2, 34);
+        drawBagSlot(c, s.x + i * (s.size + s.gap), s.y, s.size, Game.bag.items[i], 34);
       }
     }
 
@@ -1237,6 +1231,49 @@
     button(c, SHOP.emptyBtn, T('shopEmptyBag'),
       { font: 12, fill: Game.bag.items.length ? '#e88a7a' : 'rgba(255,244,220,0.45)',
         disabled: Game.bag.items.length === 0 });
+  }
+
+  /* One bag slot. Empty slots read as pockets (inset, with a stitched
+     inner line) instead of flat grey boxes; filled ones get a cream card
+     with a soft glow behind the icon. */
+  function drawBagSlot(c, x, y, size, item, iconSize) {
+    var r = size * 0.16;
+    if (item) {
+      c.fillStyle = '#f6e6c8';
+      E.roundRect(c, x, y, size, size, r);
+      c.fill();
+      c.save();
+      c.globalAlpha = 0.55;
+      E.fillEllipse(c, x + size / 2, y + size / 2, size * 0.36, size * 0.3, '#ffffff', false);
+      c.restore();
+      E.ink(c, 1.6);
+      drawBagItemIcon(c, item, x + size / 2, y + size / 2, iconSize);
+      return;
+    }
+    c.fillStyle = 'rgba(74,51,32,0.16)';
+    E.roundRect(c, x, y, size, size, r);
+    c.fill();
+    c.save();
+    c.beginPath();
+    E.roundRect(c, x, y, size, size, r);
+    c.clip();
+    /* inner shadow along the top edge */
+    var g = c.createLinearGradient(0, y, 0, y + size * 0.5);
+    g.addColorStop(0, 'rgba(36,23,8,0.22)');
+    g.addColorStop(1, 'rgba(36,23,8,0)');
+    c.fillStyle = g;
+    c.fillRect(x, y, size, size);
+    c.restore();
+    /* stitched inner line */
+    c.save();
+    c.setLineDash([3, 3]);
+    c.strokeStyle = 'rgba(74,51,32,0.35)';
+    c.lineWidth = 1.2;
+    E.roundRect(c, x + 4, y + 4, size - 8, size - 8, Math.max(2, r - 3));
+    c.stroke();
+    c.restore();
+    E.roundRect(c, x, y, size, size, r);
+    E.ink(c, 1.4);
   }
 
   function drawBagItemIcon(c, item, cx, cy, size) {
@@ -1477,6 +1514,14 @@
     c.restore();
     E.roundRect(c, x0 - 10, y0 - 8, totalW + 20, size + 16, 10);
     E.ink(c, 2);
+    /* strap loop on top, so the panel reads as her bag */
+    c.strokeStyle = PAL.ink;
+    c.lineWidth = 3;
+    c.lineCap = 'round';
+    c.beginPath();
+    c.moveTo(x0 + totalW / 2 - 16, y0 - 8);
+    c.quadraticCurveTo(x0 + totalW / 2, y0 - 19, x0 + totalW / 2 + 16, y0 - 8);
+    c.stroke();
     if (hasPianoInBag()) {
       c.fillStyle = '#f6e6c8';
       E.roundRect(c, x0, y0, totalW, size, 6);
@@ -1485,13 +1530,7 @@
       drawFurniture(c, 'piano', x0 + totalW / 2, y0 + size - 3, 'palette');
     } else {
       for (var i = 0; i < n; i++) {
-        var sx = x0 + i * (size + gap);
-        var item = Game.bag.items[i];
-        c.fillStyle = item ? '#f6e6c8' : 'rgba(74,51,32,0.14)';
-        E.roundRect(c, sx, y0, size, size, 6);
-        c.fill();
-        E.ink(c, 1.4);
-        if (item) drawBagItemIcon(c, item, sx + size / 2, y0 + size / 2, 22);
+        drawBagSlot(c, x0 + i * (size + gap), y0, size, Game.bag.items[i], 22);
       }
     }
   }
@@ -2669,8 +2708,14 @@
         break;
       case 'cushion':
         E.fillRound(c, -22, -22, 44, 22, 9, cloth);
+        c.save();
+        c.globalAlpha = 0.35;
+        E.fillRound(c, -16, -20, 30, 7, 3.5, PAL.cream, false);
+        c.restore();
         E.fillEllipse(c, -20, -11, 3.5, 3.5, PAL.cream, false);
         E.fillEllipse(c, 20, -11, 3.5, 3.5, PAL.cream, false);
+        /* centre button with a dimple */
+        E.fillEllipse(c, 0, -11, 3, 3, E.shade(cloth, -22), false);
         break;
       case 'chair':
         E.fillRound(c, -18, -30, 36, 8, 3, wood);
@@ -2699,12 +2744,32 @@
         c.quadraticCurveTo(30, -46, 34, -14);
         c.quadraticCurveTo(36, 0, 0, 0);
         c.closePath();
-        c.fillStyle = PAL.leafLight; c.fill(); E.ink(c, 2);
+        c.fillStyle = PAL.leafLight; c.fill();
+        c.save(); c.clip();
+        /* sat-in crease and a highlight so it reads as a squashy bag */
+        c.globalAlpha = 0.25;
+        E.fillEllipse(c, 4, -16, 18, 8, E.shade(PAL.leafLight, -30), false);
+        c.globalAlpha = 0.35;
+        E.fillEllipse(c, -12, -30, 9, 5, PAL.cream, false);
+        c.restore();
+        c.beginPath();
+        c.moveTo(-32, 0);
+        c.quadraticCurveTo(-40, -34, -8, -40);
+        c.quadraticCurveTo(30, -46, 34, -14);
+        c.quadraticCurveTo(36, 0, 0, 0);
+        c.closePath();
+        E.ink(c, 2);
         break;
       case 'table':
-        E.fillRound(c, -40, -44, 80, 9, 4, wood);
         E.fillRound(c, -34, -35, 7, 35, 3, woodD);
         E.fillRound(c, 27, -35, 7, 35, 3, woodD);
+        E.fillRound(c, -40, -44, 80, 9, 4, wood);
+        E.fillRound(c, -36, -42, 72, 3, 1.5, E.shade(wood, 18), false);
+        /* a vase of flowers so the table is set */
+        E.fillRound(c, -5, -58, 10, 14, 3, PAL.sky);
+        E.fillEllipse(c, -4, -62, 3.2, 3.2, PAL.peach, false);
+        E.fillEllipse(c, 4, -63, 3.2, 3.2, PAL.sun, false);
+        E.fillEllipse(c, 0, -66, 3, 3, PAL.cream, false);
         break;
       case 'coffeeTable':
         E.fillRound(c, -34, -26, 68, 8, 4, wood);

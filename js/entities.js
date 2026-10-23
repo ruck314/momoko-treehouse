@@ -367,13 +367,15 @@
     drawShoe(c, cust, -4 + swing * 0.5, 0);
     drawShoe(c, cust, 4 - swing * 0.5, 0);
 
-    /* Back arm */
+    /* Back arm, with a little hand so it reads as an arm not a stick */
     fillRound(c, -13 - swing * 0.4, CH.torsoTop + 3, 5, 14, 2.5, cust.skin);
+    fillEllipse(c, -10.5 - swing * 0.4, CH.torsoTop + 17, 3.4, 3.2, cust.skin);
 
     drawOutfit(c, cust, swing);
 
     /* Front arm */
     fillRound(c, 8 + swing * 0.4, CH.torsoTop + 3, 5, 14, 2.5, cust.skin);
+    fillEllipse(c, 10.5 + swing * 0.4, CH.torsoTop + 17, 3.4, 3.2, cust.skin);
 
     /* Head */
     fillEllipse(c, 0, CH.headY, CH.headR, CH.headR + 0.5, cust.skin);
@@ -725,48 +727,122 @@
       g.save();
       g.translate(w / 2, h);
       g.scale(s, s);
-      /* trunk */
+      /* trunk, lit from the upper left like everything else */
       fillPath(g, [[-11, 0], [-7, -90], [7, -90], [11, 0]], shade(PAL.bark, -8));
-      /* canopy: three overlapping blobs */
-      fillEllipse(g, -28, -120, 40, 34, shade(PAL.leafDark, -6));
-      fillEllipse(g, 30, -126, 38, 32, shade(PAL.leafDark, -6));
-      fillEllipse(g, 0, -152, 48, 42, PAL.leafDark);
+      g.save();
+      g.globalAlpha = 0.35;
+      fillPath(g, [[2, -4], [4, -88], [7, -90], [11, 0]], PAL.barkDark, true, false);
+      g.restore();
+      /* canopy: three overlapping clumps, each with a shaded underside and
+         a sunlit cap so they read as rounded masses like the hero tree */
+      var clumps = [[-28, -120, 40, 34], [30, -126, 38, 32], [0, -152, 48, 42]];
+      for (var i = 0; i < clumps.length; i++) {
+        var k = clumps[i], col = i === 2 ? PAL.leaf : PAL.leafDark;
+        fillEllipse(g, k[0], k[1], k[2], k[3], col, false);
+        g.save();
+        g.beginPath(); g.ellipse(k[0], k[1], k[2], k[3], 0, 0, Math.PI * 2); g.clip();
+        fillEllipse(g, k[0] + k[2] * 0.2, k[1] + k[3] * 0.6, k[2] * 1.05, k[3] * 0.6, shade(col, -16), false);
+        fillEllipse(g, k[0] - k[2] * 0.3, k[1] - k[3] * 0.4, k[2] * 0.5, k[3] * 0.34, shade(col, 14), false);
+        g.restore();
+        g.beginPath(); g.ellipse(k[0], k[1], k[2], k[3], 0, 0, Math.PI * 2); ink(g, 2);
+      }
       g.restore();
     });
     drawSprite(c, spr, d.x - w / 2, d.y - h);
   }
 
   function drawBush(c, d) {
-    var spr = getCachedSprite('bush', 90, 56, function (g) {
-      g.translate(45, 54);
-      fillEllipse(g, -16, -10, 18, 15, PAL.leaf);
-      fillEllipse(g, 16, -10, 18, 15, PAL.leaf);
-      fillEllipse(g, 0, -18, 22, 19, PAL.leafLight);
+    var spr = getCachedSprite('bush', 90, 60, function (g) {
+      g.translate(45, 58);
+      softShadow(g, 0, 0, 34, 6, 0.22);
+      var clumps = [[-16, -12, 18, 15, PAL.leaf], [16, -12, 18, 15, PAL.leaf], [0, -20, 22, 19, PAL.leafLight]];
+      for (var i = 0; i < clumps.length; i++) {
+        var k = clumps[i];
+        fillEllipse(g, k[0], k[1], k[2], k[3], k[4], false);
+        g.save();
+        g.beginPath(); g.ellipse(k[0], k[1], k[2], k[3], 0, 0, Math.PI * 2); g.clip();
+        /* shaded underside, sunlit cap, a few leaf scallops */
+        fillEllipse(g, k[0] + k[2] * 0.15, k[1] + k[3] * 0.65, k[2] * 1.05, k[3] * 0.6, shade(k[4], -16), false);
+        fillEllipse(g, k[0] - k[2] * 0.3, k[1] - k[3] * 0.4, k[2] * 0.5, k[3] * 0.34, shade(k[4], 18), false);
+        g.fillStyle = shade(k[4], 28);
+        var dots = [[-0.5, -0.1], [-0.1, -0.55], [0.35, -0.3]];
+        for (var j = 0; j < dots.length; j++) {
+          g.beginPath();
+          g.arc(k[0] + dots[j][0] * k[2], k[1] + dots[j][1] * k[3], 2.6, Math.PI, Math.PI * 2);
+          g.fill();
+        }
+        g.restore();
+        g.beginPath(); g.ellipse(k[0], k[1], k[2], k[3], 0, 0, Math.PI * 2); ink(g, 2);
+      }
+      /* a couple of berries so the bush isn't just green */
+      fillEllipse(g, -22, -8, 2.4, 2.4, '#d9534f', false);
+      fillEllipse(g, 20, -4, 2.4, 2.4, '#d9534f', false);
+      fillEllipse(g, 6, -30, 2.2, 2.2, '#d9534f', false);
     });
-    drawSprite(c, spr, d.x - 45, d.y - 54);
+    drawSprite(c, spr, d.x - 45, d.y - 58);
   }
 
   function drawStump(c, d) {
-    var spr = getCachedSprite('stump', 60, 44, function (g) {
-      g.translate(30, 42);
-      fillRound(g, -16, -26, 32, 26, 5, PAL.bark);
-      fillEllipse(g, 0, -26, 16, 6, PAL.barkLight);
-      fillEllipse(g, 0, -26, 8, 3, shade(PAL.barkLight, -14), false);
-      fillEllipse(g, 0, -26, 3, 1.2, shade(PAL.barkLight, -26), false);
+    var spr = getCachedSprite('stump', 72, 50, function (g) {
+      g.translate(36, 46);
+      softShadow(g, 0, 0, 26, 5, 0.22);
+      /* root flare at the base, then the barrel */
+      fillPath(g, [[-24, 0], [-17, -8], [-16, -26], [16, -26], [17, -8], [24, 0]], PAL.bark);
+      g.save();
+      g.beginPath();
+      g.moveTo(-23, -1); g.lineTo(-16, -8); g.lineTo(-15, -25); g.lineTo(15, -25); g.lineTo(16, -8); g.lineTo(23, -1);
+      g.closePath(); g.clip();
+      /* bark grain + shaded right side */
+      g.strokeStyle = PAL.barkDark; g.lineWidth = 1.6; g.globalAlpha = 0.45;
+      for (var i = -2; i <= 2; i++) {
+        g.beginPath(); g.moveTo(i * 6 + 1, -24); g.quadraticCurveTo(i * 6 + 3, -14, i * 6, -2); g.stroke();
+      }
+      g.globalAlpha = 0.28;
+      fillPath(g, [[6, -26], [17, -26], [24, 0], [8, 0]], PAL.barkDark, true, false);
+      g.globalAlpha = 0.18;
+      fillPath(g, [[-16, -26], [-9, -26], [-9, 0], [-24, 0]], PAL.cream, true, false);
+      g.restore();
+      /* cut face with growth rings */
+      fillEllipse(g, 0, -26, 17, 6.5, PAL.barkLight);
+      fillEllipse(g, 0, -26, 11, 4, shade(PAL.barkLight, -12), false);
+      fillEllipse(g, 0, -26, 6, 2.3, shade(PAL.barkLight, -22), false);
+      fillEllipse(g, 0, -26, 1.8, 0.9, shade(PAL.barkLight, -36), false);
+      /* a sprout from the top and a tuft at the foot */
+      g.strokeStyle = PAL.grassDark; g.lineWidth = 1.6;
+      g.beginPath(); g.moveTo(11, -29); g.quadraticCurveTo(14, -36, 19, -38); g.stroke();
+      fillEllipse(g, 20, -39, 3.2, 2.2, PAL.leafLight, false);
+      fillEllipse(g, -22, -1, 8, 3.5, PAL.grassDark, false);
     });
-    drawSprite(c, spr, d.x - 30, d.y - 42);
+    drawSprite(c, spr, d.x - 36, d.y - 46);
   }
 
   function drawRock(c, d) {
-    var spr = getCachedSprite('rock', 54, 34, function (g) {
-      g.translate(27, 32);
-      fillPath(g, [[-20, 0], [-14, -16], [2, -22], [16, -13], [20, 0]], '#a9a29a');
+    var spr = getCachedSprite('rock', 60, 40, function (g) {
+      g.translate(30, 38);
+      softShadow(g, 0, 0, 24, 4.5, 0.22);
+      var pts = [[-22, 0], [-18, -14], [-6, -24], [8, -22], [20, -12], [23, 0]];
+      fillPath(g, pts, '#a9a29a');
       g.save();
-      g.globalAlpha = 0.4;
-      fillPath(g, [[-12, -14], [0, -19], [8, -12], [-2, -10]], '#cdc7bf', true, false);
+      g.beginPath();
+      g.moveTo(pts[0][0], pts[0][1]);
+      for (var i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
+      g.closePath(); g.clip();
+      /* lit facet top-left, deep shade bottom-right */
+      fillPath(g, [[-16, -14], [-6, -22], [4, -20], [-4, -10]], '#cdc7bf', true, false);
+      g.globalAlpha = 0.35;
+      fillPath(g, [[2, -20], [20, -12], [23, 0], [-4, 0]], '#6e6760', true, false);
+      g.globalAlpha = 1;
+      /* a crack */
+      g.strokeStyle = 'rgba(74,51,32,0.5)'; g.lineWidth = 1.4;
+      g.beginPath(); g.moveTo(6, -16); g.lineTo(10, -8); g.lineTo(7, -3); g.stroke();
       g.restore();
+      /* moss on the shady side and grass at the foot */
+      fillEllipse(g, 14, -13, 6, 3.2, PAL.leaf, false);
+      fillEllipse(g, 18, -10, 3.5, 2, PAL.leafLight, false);
+      fillEllipse(g, -20, -1, 7, 3, PAL.grassDark, false);
+      fillEllipse(g, 20, -1, 6, 2.6, PAL.grassDark, false);
     });
-    drawSprite(c, spr, d.x - 27, d.y - 32);
+    drawSprite(c, spr, d.x - 30, d.y - 38);
   }
 
   function drawFlowers(c, d) {
@@ -861,10 +937,21 @@
     roundRect(c, left, top + 46, w, h - 46, 8);
     ink(c, 2);
 
-    /* roof */
-    fillPath(c, [[left - 16, top + 50], [x, top - 6], [left + w + 16, top + 50]], '#8a6340');
-    /* roof shingles */
+    /* eave shadow on the wall, so the roof sits on the building */
     c.save();
+    c.globalAlpha = 0.16;
+    fillPath(c, [[left - 4, top + 50], [left + w + 4, top + 50], [left + w + 2, top + 64], [left - 2, top + 64]], PAL.ink, true, false);
+    c.restore();
+    /* roof, sunlit on the left slope and in shade on the right */
+    var roofPts = [[left - 16, top + 50], [x, top - 6], [left + w + 16, top + 50]];
+    fillPath(c, roofPts, '#8a6340');
+    c.save();
+    c.beginPath(); c.moveTo(roofPts[0][0], roofPts[0][1]); c.lineTo(roofPts[1][0], roofPts[1][1]); c.lineTo(roofPts[2][0], roofPts[2][1]); c.closePath(); c.clip();
+    c.globalAlpha = 0.22;
+    fillPath(c, [[x, top - 6], [left + w + 16, top + 50], [x, top + 50]], PAL.ink, true, false);
+    c.globalAlpha = 0.14;
+    fillPath(c, [[left - 16, top + 50], [x, top - 6], [x, top + 50]], PAL.cream, true, false);
+    /* shingle courses */
     c.globalAlpha = 0.35;
     c.strokeStyle = PAL.ink;
     c.lineWidth = 1.2;
@@ -873,6 +960,15 @@
       var half = (w / 2 + 16) * (1 - (r * 13) / 56);
       c.beginPath(); c.moveTo(x - half, ry); c.lineTo(x + half, ry); c.stroke();
     }
+    c.restore();
+    /* chimney with a lazy puff of smoke */
+    fillRound(c, x + 70, top + 2, 18, 30, 2, '#c05a48');
+    fillRound(c, x + 67, top - 2, 24, 7, 2, shade('#c05a48', -18));
+    c.save();
+    c.globalAlpha = 0.5;
+    var puff = Math.sin(t / 50) * 2;
+    fillEllipse(c, x + 80 + puff, top - 14, 6, 5, PAL.cream, false);
+    fillEllipse(c, x + 86 - puff, top - 24, 4.5, 4, PAL.cream, false);
     c.restore();
 
     /* sign board */
@@ -884,17 +980,35 @@
     fitText(c, signName, 180, 15);
     c.fillText(signName, x, top + 72);
 
-    /* window */
-    fillRound(c, left + 24, top + 100, 74, 56, 5, '#bfe6f2');
+    /* window: warm interior, a shelf of goods, a sill underneath */
+    fillRound(c, left + 24, top + 100, 74, 56, 5, '#f3dfae');
+    c.save();
+    c.beginPath(); roundRect(c, left + 25, top + 101, 72, 54, 4); c.clip();
+    var wg = c.createLinearGradient(0, top + 100, 0, top + 156);
+    wg.addColorStop(0, 'rgba(255,244,220,0.9)');
+    wg.addColorStop(1, 'rgba(201,168,106,0.6)');
+    c.fillStyle = wg;
+    c.fillRect(left + 24, top + 100, 74, 56);
+    /* shelf with a lantern, a rope coil and stacked planks */
+    fillRound(c, left + 26, top + 134, 70, 4, 1.5, PAL.bark, false);
+    fillRound(c, left + 30, top + 138, 26, 5, 2, PAL.barkLight, false);
+    fillRound(c, left + 32, top + 143, 26, 5, 2, PAL.bark, false);
+    fillRound(c, left + 68, top + 118, 10, 14, 3, PAL.sun, false);
+    c.strokeStyle = '#c9a86a'; c.lineWidth = 3;
+    c.beginPath(); c.arc(left + 44, top + 123, 6, 0, Math.PI * 2); c.stroke();
+    /* glass glint */
+    c.globalAlpha = 0.5;
+    c.strokeStyle = '#ffffff'; c.lineWidth = 3;
+    c.beginPath(); c.moveTo(left + 30, top + 120); c.lineTo(left + 44, top + 104); c.stroke();
+    c.restore();
     c.strokeStyle = PAL.ink;
     c.lineWidth = 2;
     c.beginPath();
     c.moveTo(left + 61, top + 100); c.lineTo(left + 61, top + 156);
     c.moveTo(left + 24, top + 128); c.lineTo(left + 98, top + 128);
     c.stroke();
-    /* stacked planks visible through the window */
-    fillRound(c, left + 30, top + 138, 26, 5, 2, PAL.barkLight, false);
-    fillRound(c, left + 66, top + 140, 26, 5, 2, PAL.bark, false);
+    roundRect(c, left + 24, top + 100, 74, 56, 5); ink(c, 2);
+    fillRound(c, left + 18, top + 156, 86, 7, 3, PAL.barkLight);
 
     /* door */
     var doorW = 62, doorH = 96;
@@ -902,7 +1016,10 @@
     var dy = groundY - doorH;
     fillRound(c, dx, dy, doorW, doorH, 6, '#a9773f');
     fillRound(c, dx + 7, dy + 8, doorW - 14, 34, 4, '#c69a5e');
+    fillRound(c, dx + 7, dy + 50, doorW - 14, 34, 4, shade('#a9773f', -8));
     fillEllipse(c, dx + doorW - 13, dy + doorH / 2, 3.4, 3.4, PAL.sun);
+    /* doormat */
+    fillRound(c, dx - 6, groundY - 5, doorW + 12, 7, 3, '#c05a48');
 
     /* awning */
     var sway = Math.sin(t / 40) * 1.5;

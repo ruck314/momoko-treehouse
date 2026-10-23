@@ -13,7 +13,7 @@
   var GAME_X = 0, GAME_Y = 0;
 
   /* Bump alongside CACHE_NAME in sw.js and tag the matching git release. */
-  Game.VERSION = 'v1.10.0';
+  Game.VERSION = 'v1.11.0';
 
   var canvas, ctx;
 
