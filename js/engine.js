@@ -13,7 +13,7 @@
   var GAME_X = 0, GAME_Y = 0;
 
   /* Bump alongside CACHE_NAME in sw.js and tag the matching git release. */
-  Game.VERSION = 'v1.11.0';
+  Game.VERSION = 'v1.12.0';
 
   var canvas, ctx;
 
@@ -658,6 +658,7 @@
     /* Sky, clouds and the parallax ridges, then the grass band with its
        path -- all in entities.js. */
     E.drawMeadowSky(c, camX, t, M.groundY, M.width);
+    E.drawSkyBirds(c, t);
     E.drawMeadowGround(c, camX, M.groundY, H, M);
 
     /* Scenery (culled to the viewport) */
@@ -666,8 +667,11 @@
     for (var i = 0; i < M.decor.length; i++) {
       var d = M.decor[i];
       if (d.x < camX - 320 || d.x > camX + W + 320) continue;
-      E.drawMeadowDecor(c, d);
+      E.drawMeadowDecor(c, d, t);
     }
+    /* Weather over the grass, then the butterflies working the flowers. */
+    E.drawCloudShadows(c, camX, M.groundY, H, t);
+    E.drawMeadowButterflies(c, camX, M.groundY, t);
 
     /* Shop */
     if (M.shop.x > camX - 400 && M.shop.x < camX + W + 400) {

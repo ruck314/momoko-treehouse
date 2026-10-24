@@ -703,22 +703,51 @@
     c.textAlign = 'left';
     c.textBaseline = 'middle';
     c.font = 'bold 22px "M PLUS Rounded 1c", sans-serif';
-    c.fillText(T('customTitle') + ': ' + T(nameKeyFor(target)), 22, 32);
+    c.fillText(T('customTitle'), 22, 30);
 
-    /* Preview */
-    panel(c, CUST.previewX, CUST.previewY, CUST.previewW, CUST.previewH, '#cfe9f2');
+    /* Preview: a big Momoko on a little grassy stage, turning to show
+       both sides, with a few flowers and a butterfly for company. */
+    var PX = CUST.previewX, PY = CUST.previewY, PW = CUST.previewW, PH = CUST.previewH;
+    c.fillStyle = 'rgba(36, 23, 8, 0.16)';
+    E.roundRect(c, PX, PY + 4, PW, PH, 10);
+    c.fill();
+    panel(c, PX, PY, PW, PH, '#cfe9f2');
     c.save();
     c.beginPath();
-    E.roundRect(c, CUST.previewX + 2, CUST.previewY + 2, CUST.previewW - 4, CUST.previewH - 4, 9);
+    E.roundRect(c, PX + 2, PY + 2, PW - 4, PH - 4, 9);
     c.clip();
-    sceneBackdrop(c, CUST.previewX, CUST.previewY, CUST.previewW, CUST.previewH,
-      CUST.previewY + CUST.previewH - 62);
-    var pcx = CUST.previewX + CUST.previewW / 2;
-    var pcy = CUST.previewY + CUST.previewH - 40;
-    E.softShadow(c, pcx, pcy, 40, 8, 0.24);
+    var pgy = PY + PH - 72;
+    sceneBackdrop(c, PX, PY, PW, PH, pgy);
+    /* a bush and some flowers either side of the stage */
+    E.drawMeadowDecor(c, { type: 'bush', x: PX + 30, y: pgy + 10 });
+    E.drawMeadowDecor(c, { type: 'flowers', x: PX + PW - 38, y: pgy + 16, n: 3 }, t);
+    E.drawMeadowDecor(c, { type: 'flowers', x: PX + 70, y: pgy + 30, n: 2 }, t);
+    var pcx = PX + PW / 2;
+    var pcy = PY + PH - 46;
+    /* soft spotlight behind her so she pops off the sky */
+    var spot = c.createRadialGradient(pcx, pcy - 90, 10, pcx, pcy - 90, 120);
+    spot.addColorStop(0, 'rgba(255, 250, 220, 0.55)');
+    spot.addColorStop(1, 'rgba(255, 250, 220, 0)');
+    c.fillStyle = spot;
+    c.fillRect(PX, PY, PW, PH);
+    E.softShadow(c, pcx, pcy, 54, 10, 0.26);
+    /* walk for a while facing right, then turn and walk facing left */
+    var cycle = Math.floor(t / 150) % 2;
     var walkFrame = Math.floor(t / 9) % 4 + 1;
-    E.drawCharacter(c, pcx, pcy, cust, walkFrame, 1, 2.35, false);
+    E.drawCharacter(c, pcx, pcy, cust, walkFrame, cycle ? -1 : 1, 2.75, (t % 190) < 8);
+    var bk = t / 160;
+    E.drawButterfly(c, PX + PW - 60 + Math.sin(bk) * 30, PY + 70 + Math.sin(bk * 2.3) * 18, t, bk, PAL.peach);
     c.restore();
+    /* name ribbon across the top of the preview */
+    c.font = 'bold 14px ' + FONT;
+    var nm = T(nameKeyFor(target));
+    var rw = Math.min(PW - 40, c.measureText(nm).width + 36);
+    E.fillRound(c, pcx - rw / 2, PY - 10, rw, 26, 13, PAL.sun);
+    c.fillStyle = PAL.ink;
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    fitFont(c, nm, rw - 20, 14, 'bold');
+    c.fillText(nm, pcx, PY + 4);
 
     /* Tabs */
     for (var i = 0; i < Game.CUSTOM_TABS.length; i++) {
@@ -1045,18 +1074,20 @@
     g.addColorStop(1, '#8a6340');
     c.fillStyle = g;
     c.fillRect(VIEW.x, VIEW.y, VIEW.w, VIEW.h);
-    clipGame(c);
 
-    drawShopWall(c);
-
-    /* Banner */
+    /* Banner, running the full width of the screen on tablets and up
+       into the bezel above, so the shop reads as one big room. */
     var bg = c.createLinearGradient(0, 0, 0, 60);
     bg.addColorStop(0, '#4a3520');
     bg.addColorStop(1, '#33240f');
     c.fillStyle = bg;
-    c.fillRect(0, 0, W, 60);
+    c.fillRect(VIEW.x, VIEW.y, VIEW.w, 60 - VIEW.y);
     c.fillStyle = 'rgba(255, 210, 74, 0.35)';
-    c.fillRect(0, 58, W, 2);
+    c.fillRect(VIEW.x, 58, VIEW.w, 2);
+
+    drawShopWall(c);
+    drawShopFloor(c);
+    clipGame(c);
     c.fillStyle = PAL.sun;
     c.font = 'bold 22px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'left';
@@ -1122,34 +1153,95 @@
         g.beginPath(); g.moveTo(gx, gy); g.lineTo(gx + 2, gy + 30 + rnd() * 40); g.stroke();
       }
     });
-    c.drawImage(spr, 0, 60, spr.lw, spr.lh);
+    /* Tiled across the whole view: on tablets the planks run on past the
+       viewport instead of stopping at a seam. */
+    var vx0 = VIEW.x, vx1 = VIEW.x + VIEW.w;
+    for (var tx = Math.floor(vx0 / W) * W; tx < vx1; tx += W) {
+      c.drawImage(spr, tx, 60, spr.lw, spr.lh);
+    }
 
     var rows = shopTab === 'materials' ? [SHOP.matY + SHOP.matCellH, SHOP.matY + 2 * SHOP.matCellH]
       : shopTab === 'furniture' ? [SHOP.furY + SHOP.furCellH, SHOP.furY + 2 * SHOP.furCellH, SHOP.furY + 3 * SHOP.furCellH]
       : [324];
+    var sx0 = Math.min(6, vx0 + 6), sw0 = Math.max(W - 12, vx1 - vx0 - 12);
     for (var r = 0; r < rows.length; r++) {
       var y = rows[r] - 3;
       c.fillStyle = 'rgba(36, 23, 8, 0.25)';
-      c.fillRect(6, y + 6, W - 12, 4);
-      E.fillRound(c, 6, y, W - 12, 7, 2, '#8a6340');
+      c.fillRect(sx0, y + 6, sw0, 4);
+      E.fillRound(c, sx0, y, sw0, 7, 2, '#8a6340');
       c.fillStyle = 'rgba(255, 230, 180, 0.3)';
-      c.fillRect(8, y + 1, W - 16, 2);
+      c.fillRect(sx0 + 2, y + 1, sw0 - 4, 2);
+    }
+    /* goods on the bezel shelves, so the shop looks stocked out there */
+    if (vx0 < -40) {
+      drawShelfGoods(c, -40, rows, true);
+      drawShelfGoods(c, W + 40, rows, false);
     }
 
     /* bunting, gently swaying */
     c.strokeStyle = PAL.ink;
     c.lineWidth = 1.4;
     c.beginPath();
-    c.moveTo(0, 62);
-    c.quadraticCurveTo(W / 2, 66, W, 62);
+    c.moveTo(vx0, 62);
+    c.quadraticCurveTo((vx0 + vx1) / 2, 66, vx1, 62);
     c.stroke();
-    for (var f = 0; f < 21; f++) {
-      var fx = 10 + f * 38;
-      var u = fx / W;
+    for (var f = 0; f < (vx1 - vx0) / 38; f++) {
+      var fx = vx0 + 10 + f * 38;
+      var u = (fx - vx0) / (vx1 - vx0);
       var fy = 62 + 8 * u * (1 - u);       /* on the curve above */
       var sw = Math.sin(t / 30 + f) * 1.5;
       E.fillPath(c, [[fx - 6, fy], [fx + 6, fy], [fx + sw, fy + 9]], BUNTING[f % BUNTING.length], true);
     }
+  }
+
+  /* Little still-lifes on the shelves outside the viewport (tablets):
+     paint pots, a potted plant, rope coils, a lantern, stacked planks. */
+  function drawShelfGoods(c, x, rows, left) {
+    var dir = left ? -1 : 1;
+    for (var r = 0; r < rows.length; r++) {
+      var y = rows[r] - 3;
+      var bx = x + dir * 60;
+      if (r % 2 === 0) {
+        /* plant pot and paint tins */
+        E.fillPath(c, [[bx - 14, y], [bx - 11, y - 20], [bx + 11, y - 20], [bx + 14, y]], '#c07a4a');
+        for (var lf = -1; lf <= 1; lf++) E.fillEllipse(c, bx + lf * 8, y - 32 - Math.abs(lf) * -3, 6, 12, lf ? PAL.leaf : PAL.leafLight);
+        var cols = [PAL.peach, PAL.sky, PAL.sun];
+        for (var i = 0; i < 3; i++) {
+          E.fillRound(c, bx + dir * 40 + i * 16 - 6, y - 18, 12, 18, 2, cols[i]);
+          E.fillEllipse(c, bx + dir * 40 + i * 16, y - 18, 6, 2.6, E.shade(cols[i], 28), false);
+        }
+      } else {
+        /* rope coil, lantern, stacked planks */
+        E.drawMaterialIcon(c, 'rope', bx, y - 16, 34);
+        E.drawMaterialIcon(c, 'lantern', bx + dir * 44, y - 18, 36);
+        E.fillRound(c, bx - dir * 70 - 20, y - 8, 40, 8, 2, PAL.barkLight);
+        E.fillRound(c, bx - dir * 70 - 18, y - 16, 40, 8, 2, PAL.bark);
+      }
+    }
+  }
+
+  /* Floorboards under the bottom shelf, out to the bottom of the view. */
+  function drawShopFloor(c) {
+    var fy = 352 - 8;
+    var y1 = VIEW.y + VIEW.h;
+    if (y1 <= fy) return;
+    var vx0 = VIEW.x, vx1 = VIEW.x + VIEW.w;
+    c.fillStyle = '#7a5834';
+    c.fillRect(vx0, fy, vx1 - vx0, y1 - fy);
+    c.save();
+    c.globalAlpha = 0.35;
+    c.strokeStyle = '#4a3320';
+    c.lineWidth = 2;
+    for (var x = Math.floor(vx0 / 72) * 72; x < vx1; x += 72) {
+      c.beginPath(); c.moveTo(x, fy); c.lineTo(x, y1); c.stroke();
+    }
+    for (var y = fy + 36; y < y1; y += 36) {
+      c.beginPath(); c.moveTo(vx0, y); c.lineTo(vx1, y); c.stroke();
+    }
+    c.restore();
+    /* lit edge where the wall meets the floor */
+    c.fillStyle = 'rgba(255, 230, 180, 0.25)';
+    c.fillRect(vx0, fy, vx1 - vx0, 3);
   }
 
   function drawShopGrid(c) {
@@ -1803,6 +1895,9 @@
     c.fillText(T('extTitle'), 20, 28);
 
     /* Live preview */
+    c.fillStyle = 'rgba(36, 23, 8, 0.16)';
+    E.roundRect(c, EXT.previewX, EXT.previewY + 4, EXT.previewW, EXT.previewH, 10);
+    c.fill();
     panel(c, EXT.previewX, EXT.previewY, EXT.previewW, EXT.previewH, '#cfe9f2');
     c.save();
     c.beginPath();

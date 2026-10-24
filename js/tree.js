@@ -229,7 +229,7 @@
     E.fillRound(c, hx + hw - 5, hy, 8, hh, 3, PAL.bark);
   }
 
-  function layerRoof(c, a, ext) {
+  function layerRoof(c, a, ext, t) {
     var x = a.x, hx = a.houseX, hy = a.houseTop, hw = a.houseW;
     var col = ext.roofColor;
     var eaveL = hx - 16, eaveR = hx + hw + 16;
@@ -310,6 +310,22 @@
 
     /* Fascia board tidies the eave line for every style. */
     E.fillRound(c, eaveL - 2, hy + 2, (eaveR - eaveL) + 4, 8, 3, E.shade(col, -22));
+
+    /* A little chimney on the pitched roofs, with a lazy curl of smoke,
+       so the house looks lived in from the moment the roof goes on. */
+    if (ext.roofStyle === 'gable' || ext.roofStyle === 'round') {
+      var cx = x + 50;
+      var top = apex - 2;
+      c.save();
+      c.globalAlpha = 0.5;
+      var puff = Math.sin(t / 50) * 2;
+      E.fillEllipse(c, cx + 4 + puff, top - 12, 5, 4, PAL.cream, false);
+      E.fillEllipse(c, cx + 9 - puff, top - 21, 4, 3.4, PAL.cream, false);
+      E.fillEllipse(c, cx + 13 + puff * 0.5, top - 29, 3, 2.6, PAL.cream, false);
+      c.restore();
+      E.fillRound(c, cx - 7, top, 14, 30, 2, '#c05a48');
+      E.fillRound(c, cx - 9, top - 3, 18, 6, 2, E.shade('#c05a48', -18));
+    }
   }
 
   function layerOpenings(c, a, ext) {
@@ -397,6 +413,24 @@
         E.fillRound(c, cx - s / 2, cy - s / 2, s, s, 2, PAL.sky);
         break;
     }
+    /* Curtains in the trim colour, gathered to each side, drawn on the
+       glass before the muntins so the bars sit over them. */
+    var cur = E.shade(ext.trimColor, -6);
+    c.save();
+    c.beginPath();
+    if (ext.windowStyle === 'round') {
+      c.ellipse(cx, cy, s / 2, s / 2, 0, 0, Math.PI * 2);
+    } else if (ext.windowStyle === 'diamond') {
+      c.moveTo(cx, cy - s / 2); c.lineTo(cx + s / 2, cy); c.lineTo(cx, cy + s / 2); c.lineTo(cx - s / 2, cy);
+      c.closePath();
+    } else {
+      c.rect(cx - s / 2, cy - s / 2, s, s);
+    }
+    c.clip();
+    E.fillPath(c, [[cx - s / 2, cy - s / 2], [cx - s / 2 + 11, cy - s / 2], [cx - s / 2 + 5, cy], [cx - s / 2 + 9, cy + s / 2], [cx - s / 2, cy + s / 2]], cur, true, false);
+    E.fillPath(c, [[cx + s / 2, cy - s / 2], [cx + s / 2 - 11, cy - s / 2], [cx + s / 2 - 5, cy], [cx + s / 2 - 9, cy + s / 2], [cx + s / 2, cy + s / 2]], cur, true, false);
+    c.restore();
+
     /* Muntins + a warm glow so the house looks lived in. */
     c.strokeStyle = frame;
     c.lineWidth = 2.5;
@@ -550,7 +584,7 @@
   var LAYERS = {
     platform: function (c, a, ext, t) { layerPlatform(c, a); },
     walls: function (c, a, ext, t) { layerWalls(c, a, ext); },
-    roof: function (c, a, ext, t) { layerRoof(c, a, ext); },
+    roof: function (c, a, ext, t) { layerRoof(c, a, ext, t || 0); },
     openings: function (c, a, ext, t) { layerOpenings(c, a, ext); },
     extras: function (c, a, ext, t) { layerExtras(c, a, ext, t); },
     ladder: function (c, a, ext, t) { layerLadder(c, a); },

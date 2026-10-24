@@ -135,13 +135,44 @@
     torsoW: 20,
   };
 
+  /* Fill a shape, then tuck a shadow down its right side and a highlight
+     up its left (the sun is top-left everywhere in this game), then ink
+     the outline. pathFn traces the shape; it is called three times. */
+  function shadedFill(c, pathFn, col, inkW) {
+    pathFn();
+    c.fillStyle = col;
+    c.fill();
+    c.save();
+    pathFn();
+    c.clip();
+    c.globalAlpha = 0.14;
+    c.fillStyle = '#2a1608';
+    c.fillRect(5, -80, 60, 120);
+    c.globalAlpha = 0.22;
+    c.fillStyle = '#ffffff';
+    c.fillRect(-65, -80, 58, 120);
+    c.restore();
+    pathFn();
+    ink(c, inkW || 2);
+  }
+  function polyPath(c, pts) {
+    return function () {
+      c.beginPath();
+      c.moveTo(pts[0][0], pts[0][1]);
+      for (var i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]);
+      c.closePath();
+    };
+  }
+
   function drawHair(c, cust, back) {
     var col = cust.hair;
     var dark = shade(col, -22);
     var hy = CH.headY;
     var r = CH.headR;
     if (back) {
-      /* Behind-the-head volume, painted before the face. */
+      /* Behind-the-head volume, painted before the face. A shade darker
+         than the fringe so it sits behind it. */
+      col = shade(col, -9);
       switch (cust.hairStyle) {
         case 'twinTails':
           fillEllipse(c, -r - 6, hy + 6, 7, 12, col);
@@ -172,16 +203,23 @@
       c.closePath();
       c.fillStyle = col;
       c.fill();
-      ink(c, 2);
+      /* darker along the hairline, where the fringe shades the brow */
+      c.clip();
+      c.globalAlpha = 0.3;
+      fillEllipse(c, 1, hy + 1, r + 2, 4.5, dark, false);
       c.restore();
+      c.beginPath();
+      c.arc(0, hy, r + 1.5, Math.PI, Math.PI * 2);
+      c.closePath();
+      ink(c, 2);
       if (cust.hairStyle === 'bob') {
         fillRound(c, -r - 2, hy - 2, 5, 14, 2.5, col);
         fillRound(c, r - 3, hy - 2, 5, 14, 2.5, col);
       }
       /* A soft highlight so flat hair still reads as round. */
       c.save();
-      c.globalAlpha = 0.35;
-      fillEllipse(c, -5, hy - 7, 5, 3, shade(col, 40), false);
+      c.globalAlpha = 0.4;
+      fillEllipse(c, -5, hy - 8, 5.5, 2.8, shade(col, 45), false);
       c.restore();
     }
   }
@@ -194,7 +232,7 @@
 
     switch (cust.outfit) {
       case 'frillyDress':
-        fillPath(c, [[-9, top], [9, top], [16, bot + 8], [-16, bot + 8]], col);
+        shadedFill(c, polyPath(c, [[-9, top], [9, top], [16, bot + 8], [-16, bot + 8]]), col);
         /* Frill scallops along the hem. */
         c.beginPath();
         for (var i = -16; i < 16; i += 8) {
@@ -206,32 +244,43 @@
         ink(c, 1.5);
         break;
       case 'sailorDress':
-        fillPath(c, [[-9, top], [9, top], [15, bot + 7], [-15, bot + 7]], col);
+        shadedFill(c, polyPath(c, [[-9, top], [9, top], [15, bot + 7], [-15, bot + 7]]), col);
         fillPath(c, [[-9, top], [9, top], [6, top + 8], [-6, top + 8]], PAL.cream);
         fillRound(c, -4, top + 6, 8, 4, 2, '#c05a48');
+        /* hem stripe */
+        c.strokeStyle = light;
+        c.lineWidth = 1.6;
+        c.beginPath(); c.moveTo(-13, bot + 3); c.lineTo(13, bot + 3); c.stroke();
         break;
       case 'starDress':
-        fillPath(c, [[-9, top], [9, top], [15, bot + 7], [-15, bot + 7]], col);
+        shadedFill(c, polyPath(c, [[-9, top], [9, top], [15, bot + 7], [-15, bot + 7]]), col);
         c.fillStyle = PAL.sun;
         for (var s = 0; s < 3; s++) star(c, -7 + s * 7, bot - 1 + (s % 2) * 4, 2.6);
         break;
       case 'overalls':
-        fillRound(c, -10, top + 3, 20, (bot + 4) - (top + 3), 4, col);
         fillRound(c, -8, top - 1, 3.5, 9, 1.5, col);
         fillRound(c, 4.5, top - 1, 3.5, 9, 1.5, col);
         fillRound(c, -9, top - 2, 18, 8, 3, PAL.cream);
-        fillRound(c, -10, top + 3, 20, (bot + 4) - (top + 3), 4, col);
+        shadedFill(c, function () { roundRect(c, -10, top + 3, 20, (bot + 4) - (top + 3), 4); }, col);
         fillRound(c, -4, top + 8, 8, 6, 2, dark);
+        /* buttons on the bib straps */
+        fillEllipse(c, -6, top + 5, 1.3, 1.3, PAL.sun, false);
+        fillEllipse(c, 6, top + 5, 1.3, 1.3, PAL.sun, false);
         break;
       case 'sweater':
-        fillRound(c, -11, top, 22, (bot + 5) - top, 6, col);
+        shadedFill(c, function () { roundRect(c, -11, top, 22, (bot + 5) - top, 6); }, col);
+        c.save();
+        roundRect(c, -11, top, 22, (bot + 5) - top, 6);
+        c.clip();
         c.strokeStyle = dark;
+        c.globalAlpha = 0.7;
         c.lineWidth = 1.5;
         for (var y = top + 5; y < bot + 3; y += 5) {
-          c.beginPath(); c.moveTo(-10, y); c.lineTo(10, y); c.stroke();
+          c.beginPath(); c.moveTo(-12, y); c.lineTo(12, y); c.stroke();
         }
-        roundRect(c, -11, top, 22, (bot + 5) - top, 6);
-        ink(c, 2);
+        c.restore();
+        /* ribbed collar */
+        fillRound(c, -6, top - 1, 12, 4, 2, light);
         break;
     }
     return legSwing;
@@ -319,10 +368,13 @@
       c.beginPath(); c.moveTo(-7, hy + 1); c.lineTo(-2, hy + 1); c.stroke();
       c.beginPath(); c.moveTo(2, hy + 1); c.lineTo(7, hy + 1); c.stroke();
     } else {
-      fillEllipse(c, -4.5, hy + 1, 2.2, 2.8, PAL.ink, false);
-      fillEllipse(c, 4.5, hy + 1, 2.2, 2.8, PAL.ink, false);
-      fillEllipse(c, -3.8, hy + 0.2, 0.8, 1, '#ffffff', false);
-      fillEllipse(c, 5.2, hy + 0.2, 0.8, 1, '#ffffff', false);
+      fillEllipse(c, -4.5, hy + 1, 2.4, 3, PAL.ink, false);
+      fillEllipse(c, 4.5, hy + 1, 2.4, 3, PAL.ink, false);
+      fillEllipse(c, -3.7, hy - 0.1, 0.95, 1.15, '#ffffff', false);
+      fillEllipse(c, 5.3, hy - 0.1, 0.95, 1.15, '#ffffff', false);
+      /* a tiny lower catchlight gives the eyes a wet sparkle */
+      fillEllipse(c, -5.2, hy + 2.6, 0.5, 0.5, '#ffffff', false);
+      fillEllipse(c, 3.8, hy + 2.6, 0.5, 0.5, '#ffffff', false);
     }
     /* Blush */
     c.save();
@@ -367,9 +419,11 @@
     drawShoe(c, cust, -4 + swing * 0.5, 0);
     drawShoe(c, cust, 4 - swing * 0.5, 0);
 
-    /* Back arm, with a little hand so it reads as an arm not a stick */
-    fillRound(c, -13 - swing * 0.4, CH.torsoTop + 3, 5, 14, 2.5, cust.skin);
-    fillEllipse(c, -10.5 - swing * 0.4, CH.torsoTop + 17, 3.4, 3.2, cust.skin);
+    /* Back arm, with a little hand so it reads as an arm not a stick.
+       A shade darker than the front one so the two don't merge. */
+    var skinBack = shade(cust.skin, -10);
+    fillRound(c, -13 - swing * 0.4, CH.torsoTop + 3, 5, 14, 2.5, skinBack);
+    fillEllipse(c, -10.5 - swing * 0.4, CH.torsoTop + 17, 3.4, 3.2, skinBack);
 
     drawOutfit(c, cust, swing);
 
@@ -377,8 +431,20 @@
     fillRound(c, 8 + swing * 0.4, CH.torsoTop + 3, 5, 14, 2.5, cust.skin);
     fillEllipse(c, 10.5 + swing * 0.4, CH.torsoTop + 17, 3.4, 3.2, cust.skin);
 
-    /* Head */
-    fillEllipse(c, 0, CH.headY, CH.headR, CH.headR + 0.5, cust.skin);
+    /* Head, with a soft shadow under the chin side so it reads as a ball */
+    fillEllipse(c, 0, CH.headY, CH.headR, CH.headR + 0.5, cust.skin, false);
+    c.save();
+    c.beginPath();
+    c.ellipse(0, CH.headY, CH.headR, CH.headR + 0.5, 0, 0, Math.PI * 2);
+    c.clip();
+    c.globalAlpha = 0.5;
+    fillEllipse(c, 2.5, CH.headY + 3.5, CH.headR, CH.headR + 0.5, shade(cust.skin, -12), false);
+    c.globalAlpha = 1;
+    fillEllipse(c, -1, CH.headY - 1.2, CH.headR, CH.headR + 0.5, cust.skin, false);
+    c.restore();
+    c.beginPath();
+    c.ellipse(0, CH.headY, CH.headR, CH.headR + 0.5, 0, 0, Math.PI * 2);
+    ink(c, 2);
     drawHair(c, cust, false);
     drawFace(c, cust, blink);
     drawHat(c, cust);
@@ -845,36 +911,192 @@
     drawSprite(c, spr, d.x - 30, d.y - 38);
   }
 
-  function drawFlowers(c, d) {
+  /* A clump of flowers. The variant (from its x) picks the colour run and
+     stem heights so no two clumps are the same stamp, and the whole clump
+     leans with the breeze: a shear about its roots, so the cached sprite
+     is reused as-is. */
+  function drawFlowers(c, d, t) {
     var n = d.n || 4;
-    var key = 'flowers' + n;
-    var w = n * 18 + 10, h = 30;
+    var v = Math.floor(d.x / 37) % 5;
+    var key = 'flowers' + n + '_' + v;
+    var w = n * 18 + 10, h = 34;
     var spr = getCachedSprite(key, w, h, function (g) {
+      var rnd = seeded(900 + v * 31 + n);
       for (var i = 0; i < n; i++) {
-        var fx = 10 + i * 18;
-        var col = FLOWER_COLORS[(i * 3) % FLOWER_COLORS.length];
+        var fx = 10 + i * 18 + (rnd() - 0.5) * 6;
+        var stem = 11 + rnd() * 8;
+        var col = FLOWER_COLORS[(i * 3 + v) % FLOWER_COLORS.length];
+        var pr = 2.3 + rnd() * 0.8;
         g.strokeStyle = PAL.grassDark;
         g.lineWidth = 2;
-        g.beginPath(); g.moveTo(fx, h); g.lineTo(fx, h - 13); g.stroke();
+        g.beginPath(); g.moveTo(fx, h); g.quadraticCurveTo(fx + 1.5, h - stem * 0.5, fx, h - stem); g.stroke();
+        /* a leaf on every other stem */
+        if (i % 2 === 0) {
+          fillEllipse(g, fx + 3.5, h - stem * 0.45, 3.2, 1.6, PAL.leaf, false);
+        }
         for (var p = 0; p < 5; p++) {
           var a = (Math.PI * 2 / 5) * p;
-          fillEllipse(g, fx + Math.cos(a) * 3.4, (h - 16) + Math.sin(a) * 3.4, 2.6, 2.6, col, false);
+          fillEllipse(g, fx + Math.cos(a) * (pr + 0.9), (h - stem - 3) + Math.sin(a) * (pr + 0.9), pr, pr, col, false);
         }
-        fillEllipse(g, fx, h - 16, 1.9, 1.9, PAL.sun, false);
+        fillEllipse(g, fx, h - stem - 3, 1.9, 1.9, PAL.sun, false);
       }
     });
-    drawSprite(c, spr, d.x - w / 2, d.y - h);
+    var sway = t === undefined ? 0 : Math.sin(t / 42 + d.x * 0.013) * 0.07;
+    c.save();
+    c.translate(d.x, d.y);
+    c.transform(1, 0, sway, 1, 0, 0);
+    drawSprite(c, spr, -w / 2, -h);
+    c.restore();
+  }
+
+  /* A short run of picket fence, weathered cream with a rail. */
+  function drawFence(c, d) {
+    var n = d.n || 6;
+    var w = n * 16 + 8, h = 44;
+    var spr = getCachedSprite('fence' + n, w, h, function (g) {
+      softShadow(g, w / 2, h - 2, w / 2, 4, 0.18);
+      var wood = '#e7d6b4';
+      /* rails first, so the pickets sit in front */
+      fillRound(g, 2, h - 30, w - 4, 5, 2, shade(wood, -12));
+      fillRound(g, 2, h - 16, w - 4, 5, 2, shade(wood, -12));
+      for (var i = 0; i < n; i++) {
+        var px = 6 + i * 16;
+        fillPath(g, [[px, h - 2], [px, h - 36], [px + 5, h - 42], [px + 10, h - 36], [px + 10, h - 2]], wood);
+        g.save();
+        g.globalAlpha = 0.22;
+        fillPath(g, [[px + 6, h - 37], [px + 10, h - 36], [px + 10, h - 2], [px + 6, h - 2]], '#2a1608', true, false);
+        g.restore();
+      }
+      /* a little vine creeping up the end post */
+      fillEllipse(g, 8, h - 20, 3.5, 2.6, PAL.leafLight, false);
+      fillEllipse(g, 12, h - 28, 3, 2.3, PAL.leaf, false);
+      fillEllipse(g, 9, h - 34, 2.4, 2, PAL.leafLight, false);
+      fillEllipse(g, 13, h - 24, 1.8, 1.8, PAL.peach, false);
+    });
+    drawSprite(c, spr, d.x - w / 2, d.y - h + 2);
+  }
+
+  /* ---- Ambient life: butterflies, cloud shadows, birds ---- */
+
+  /* One butterfly, flapping; (x, y) is its body, `k` its phase. */
+  function drawButterfly(c, x, y, t, k, col) {
+    var flap = Math.abs(Math.sin(t / 4 + k));
+    c.save();
+    c.translate(x, y);
+    c.rotate(Math.cos(k) * 0.3);
+    c.fillStyle = col;
+    c.strokeStyle = PAL.ink;
+    c.lineWidth = 1.2;
+    for (var sd = -1; sd <= 1; sd += 2) {
+      c.beginPath();
+      c.ellipse(sd * 4.5 * flap, -2, 5 * flap + 0.6, 6, 0, 0, Math.PI * 2);
+      c.fill(); c.stroke();
+      c.beginPath();
+      c.ellipse(sd * 3.5 * flap, 4, 3.5 * flap + 0.5, 4, 0, 0, Math.PI * 2);
+      c.fill(); c.stroke();
+    }
+    fillRound(c, -1, -6, 2, 12, 1, PAL.ink, false);
+    c.restore();
+  }
+
+  /* Butterflies looping lazily over the flowers along the whole meadow.
+     Positions are a pure function of t, so nothing needs updating. */
+  var MEADOW_BUTTERFLIES = [
+    { x: 520, col: PAL.peach, sp: 150 }, { x: 905, col: PAL.sky, sp: 190 },
+    { x: 1245, col: PAL.sun, sp: 170 }, { x: 1690, col: '#d9b8ff', sp: 160 },
+    { x: 2255, col: PAL.peach, sp: 200 }, { x: 1420, col: '#ffffff', sp: 180 },
+  ];
+  function drawMeadowButterflies(c, camX, groundY, t) {
+    for (var i = 0; i < MEADOW_BUTTERFLIES.length; i++) {
+      var b = MEADOW_BUTTERFLIES[i];
+      if (b.x < camX - 120 || b.x > camX + VIEW_W + 120) continue;
+      var k = t / b.sp + i * 2.4;
+      var x = b.x + Math.sin(k) * 46 + Math.sin(k * 3.1) * 8;
+      var y = groundY - 42 + Math.sin(k * 2.3) * 18 + Math.cos(k * 0.7) * 10;
+      drawButterfly(c, x, y, t, k, b.col);
+    }
+  }
+
+  /* Big soft cloud shadows sliding over the grass, in step with the
+     nearest cloud layer, so the meadow has weather instead of a flat
+     green floor. Drawn in world space. */
+  function drawCloudShadows(c, camX, groundY, H, t) {
+    var wrap = VIEW_W + 700;
+    for (var i = 0; i < 3; i++) {
+      var sx = ((t * 0.16 + i * 530 + camX * 0.78) % wrap + wrap) % wrap - 350 + camX;
+      var sy = groundY + 30 + i * 16;
+      var rx = 170 + i * 30, ry = 30 + i * 5;
+      c.save();
+      c.translate(sx, sy);
+      c.scale(1, ry / rx);
+      var g = c.createRadialGradient(0, 0, 0, 0, 0, rx);
+      g.addColorStop(0, 'rgba(30, 58, 18, 0.13)');
+      g.addColorStop(0.55, 'rgba(30, 58, 18, 0.09)');
+      g.addColorStop(1, 'rgba(30, 58, 18, 0)');
+      c.fillStyle = g;
+      c.beginPath();
+      c.arc(0, 0, rx, 0, Math.PI * 2);
+      c.fill();
+      c.restore();
+    }
+  }
+
+  /* A pair of birds gliding across the sky, screen-space, slow. */
+  function drawSkyBirds(c, t) {
+    var wrap = VIEW.w + 300;
+    var bx = ((t * 0.3 + 160) % wrap + wrap) % wrap - 150 + VIEW.x;
+    var by = 112 + Math.sin(t / 60) * 8;
+    c.save();
+    c.strokeStyle = 'rgba(74, 51, 32, 0.5)';
+    c.lineWidth = 1.6;
+    c.lineCap = 'round';
+    for (var b = 0; b < 2; b++) {
+      var wing = 2.5 + Math.sin(t / 8 + b * 1.7) * 2.5;
+      var fx = bx - b * 22, fy = by + b * 9;
+      c.beginPath();
+      c.moveTo(fx - 6, fy - wing);
+      c.quadraticCurveTo(fx - 2.5, fy - wing * 0.4, fx, fy);
+      c.quadraticCurveTo(fx + 2.5, fy - wing * 0.4, fx + 6, fy - wing);
+      c.stroke();
+    }
+    c.restore();
   }
 
   function drawMushroom(c, d) {
-    var spr = getCachedSprite('mushroom', 34, 30, function (g) {
-      g.translate(17, 28);
+    var spr = getCachedSprite('mushroom', 40, 32, function (g) {
+      g.translate(20, 30);
+      softShadow(g, 2, 0, 14, 3, 0.2);
       fillRound(g, -4, -12, 8, 12, 3, PAL.cream);
-      fillPath(g, [[-13, -11], [-8, -20], [8, -20], [13, -11]], '#d9534f');
-      fillEllipse(g, -5, -14, 2.4, 1.8, PAL.cream, false);
-      fillEllipse(g, 4, -16, 2, 1.6, PAL.cream, false);
+      /* domed cap, shaded on the right, with a lit rim */
+      g.beginPath();
+      g.moveTo(-13, -11);
+      g.quadraticCurveTo(-12, -22, 0, -23);
+      g.quadraticCurveTo(12, -22, 13, -11);
+      g.closePath();
+      g.fillStyle = '#d9534f';
+      g.fill();
+      g.save();
+      g.clip();
+      g.globalAlpha = 0.22;
+      fillPath(g, [[2, -24], [14, -24], [14, -10], [4, -10]], '#2a1608', true, false);
+      g.globalAlpha = 0.3;
+      fillEllipse(g, -5, -19, 5, 2.2, '#ffffff', false);
+      g.restore();
+      g.beginPath();
+      g.moveTo(-13, -11);
+      g.quadraticCurveTo(-12, -22, 0, -23);
+      g.quadraticCurveTo(12, -22, 13, -11);
+      g.closePath();
+      ink(g, 2);
+      fillEllipse(g, -5, -15, 2.4, 1.8, PAL.cream, false);
+      fillEllipse(g, 4, -17, 2, 1.6, PAL.cream, false);
+      fillEllipse(g, 8, -13, 1.4, 1.2, PAL.cream, false);
+      /* a baby one leaning on it */
+      fillRound(g, 11, -6, 5, 6, 2, PAL.cream);
+      fillEllipse(g, 13.5, -7, 6, 3.5, '#d9534f');
+      fillEllipse(g, 12, -8, 1.3, 1, PAL.cream, false);
     });
-    drawSprite(c, spr, d.x - 17, d.y - 28);
+    drawSprite(c, spr, d.x - 20, d.y - 30);
   }
 
   /* Shrink a label until it fits `maxW`, so a Japanese string (wider glyphs)
@@ -907,16 +1129,17 @@
     drawSprite(c, spr, d.x - 38, d.y - 74);
   }
 
-  function drawMeadowDecor(c, d) {
+  function drawMeadowDecor(c, d, t) {
     switch (d.type) {
       case 'hill': drawHill(c, d); break;
       case 'bgTree': drawBgTree(c, d); break;
       case 'bush': drawBush(c, d); break;
       case 'stump': drawStump(c, d); break;
       case 'rock': drawRock(c, d); break;
-      case 'flowers': drawFlowers(c, d); break;
+      case 'flowers': drawFlowers(c, d, t); break;
       case 'mushroom': drawMushroom(c, d); break;
       case 'signpost': drawSignpost(c, d); break;
+      case 'fence': drawFence(c, d); break;
     }
   }
 
@@ -1306,6 +1529,10 @@
     drawCharacter: drawCharacter,
     drawPortrait: drawPortrait,
     drawMeadowDecor: drawMeadowDecor,
+    drawMeadowButterflies: drawMeadowButterflies,
+    drawCloudShadows: drawCloudShadows,
+    drawSkyBirds: drawSkyBirds,
+    drawButterfly: drawButterfly,
     drawShop: drawShop,
     drawMaterialIcon: drawMaterialIcon,
     fitText: fitText,
