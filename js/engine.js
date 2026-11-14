@@ -13,7 +13,7 @@
   var GAME_X = 0, GAME_Y = 0;
 
   /* Bump alongside CACHE_NAME in sw.js and tag the matching git release. */
-  Game.VERSION = 'v1.12.0';
+  Game.VERSION = 'v1.13.0';
 
   var canvas, ctx;
 
@@ -684,7 +684,8 @@
 
     /* The tree */
     if (M.tree.x > camX - 500 && M.tree.x < camX + W + 500) {
-      E.softShadow(c, M.tree.x, M.tree.groundY + 3, 150, 10, 0.2);
+      E.drawTreeShade(c, M.tree.x, M.tree.groundY);
+      E.softShadow(c, M.tree.x, M.tree.groundY + 3, 120, 10, 0.34);
       var building = state === State.BUILD_CUTSCENE;
       Game.tree.drawTree(c, M.tree.x, M.tree.groundY, Game.build.stageIndex, Game.exterior, t,
         !building, building ? Game.ui.cutsceneReveal() : undefined);
@@ -700,6 +701,11 @@
 
     for (var p = 0; p < particles.length; p++) particles[p].draw(c);
     c.restore();
+
+    /* Air and lens: drifting pollen and soft foreground grass, under the
+       HUD. (The grade, vignette and sun shafts are baked into the sky.) */
+    E.drawMotes(c, camX, t, 0, W);
+    E.drawForeground(c, camX, H, 0, W);
 
     /* Prompt for whatever she is standing next to */
     var target = nearest();
@@ -839,9 +845,37 @@
   var lastTime = 0;
   var accumulator = 0;
 
+  /* ---- Effect budget ----
+     Game.FX (declared in entities.js, next to the painters that read it)
+     switches the lighting layers: glow, grade, vignette, shafts, motes,
+     foreground, dapple. If frames keep running long -- a smoothed frame
+     time above 28 ms for about a second and a half -- the engine steps
+     Game.FX.level up: 1 drops the grade, sun shafts and soft foreground,
+     2 drops every effect. It never steps back down by itself, so the
+     picture can't flicker between looks. Set Game.FX.auto = false to pin
+     the level by hand. */
+  var frameEma = 16.7, slowFrames = 0;
+  function watchFrameTime(delta) {
+    var FX = Game.FX;
+    if (!FX || !FX.auto || FX.level >= 2) return;
+    /* A hitch (tab switch, a cache being baked) is not a slow device. */
+    if (delta > 250) { slowFrames = 0; return; }
+    frameEma += (delta - frameEma) * 0.08;
+    if (frameEma > 28) {
+      if (++slowFrames > 90) {
+        FX.level++;
+        slowFrames = 0;
+        frameEma = 16.7;
+      }
+    } else {
+      slowFrames = 0;
+    }
+  }
+
   function gameLoop(timestamp) {
     var delta = timestamp - lastTime;
     lastTime = timestamp;
+    watchFrameTime(delta);
     if (delta > 100) delta = 100;      /* cap – avoid the spiral of death */
     accumulator += delta;
     while (accumulator >= FIXED_DT) {

@@ -323,11 +323,18 @@
   function draw(c) {
     /* Music-room backdrop so it reads as sitting down at the piano. */
     var V = Game.ui.VIEW || { x: 0, y: 0, w: W, h: H };
-    var g = c.createLinearGradient(0, V.y, 0, V.y + V.h);
-    g.addColorStop(0, '#dfe4f2');
-    g.addColorStop(1, '#8f93b8');
-    c.fillStyle = g;
-    c.fillRect(V.x, V.y, V.w, V.h);
+    var back = E.getBaked('pianoBack', '', V.x, V.y, V.w, V.h, 0.5, function (g) {
+      var wg = g.createLinearGradient(0, V.y, 0, V.y + V.h);
+      wg.addColorStop(0, '#59608f');
+      wg.addColorStop(0.45, '#aab4dc');
+      wg.addColorStop(1, '#4f4a78');
+      g.fillStyle = wg;
+      g.fillRect(V.x, V.y, V.w, V.h);
+      /* a spotlight on the keyboard, then the shared grade and vignette */
+      E.glow(g, W / 2, KEY_TOP + 40, 460, '255, 240, 210', 0.5);
+      E.postFX(g, V.x, V.y, V.w, V.h);
+    });
+    c.drawImage(back, V.x, V.y, V.w, V.h);
     /* The wall runs out across the bezel on tablets; the keys and
        buttons stay in the viewport. */
     c.beginPath();
@@ -461,11 +468,23 @@
     var i, k;
     var target = followTargetMidi();
 
-    /* Case */
-    c.fillStyle = '#5a3c22';
+    /* Case: polished wood, lit from above, standing on its own shadow */
+    c.fillStyle = 'rgba(20, 14, 50, 0.3)';
+    E.roundRect(c, X0 - 22, KEY_TOP - 18, WHITE_W * 14 + 44, WHITE_H + 46, 12);
+    c.fill();
+    var cg = c.createLinearGradient(0, KEY_TOP - 26, 0, KEY_TOP + WHITE_H + 20);
+    cg.addColorStop(0, '#8a5a34');
+    cg.addColorStop(0.12, '#6a4326');
+    cg.addColorStop(1, '#3f2716');
+    c.fillStyle = cg;
     E.roundRect(c, X0 - 18, KEY_TOP - 26, WHITE_W * 14 + 36, WHITE_H + 46, 10);
     c.fill();
     E.ink(c, 2.5);
+    c.strokeStyle = 'rgba(255, 226, 180, 0.4)';
+    c.lineWidth = 1.5;
+    c.beginPath();
+    c.moveTo(X0 - 10, KEY_TOP - 23.5); c.lineTo(X0 + WHITE_W * 14 + 10, KEY_TOP - 23.5);
+    c.stroke();
     c.fillStyle = '#3b2a16';
     E.roundRect(c, X0 - 10, KEY_TOP - 18, WHITE_W * 14 + 20, 16, 5);
     c.fill();
@@ -478,6 +497,12 @@
     E.fitText(c, plate, 300, 11);
     c.fillText(plate, X0 + WHITE_W * 7, KEY_TOP - 10);
 
+    var keyShade = c.createLinearGradient(0, KEY_TOP, 0, KEY_TOP + WHITE_H);
+    keyShade.addColorStop(0, 'rgba(40, 24, 70, 0.34)');
+    keyShade.addColorStop(0.12, 'rgba(40, 24, 70, 0.04)');
+    keyShade.addColorStop(0.86, 'rgba(120, 90, 60, 0)');
+    keyShade.addColorStop(0.93, 'rgba(120, 90, 60, 0.16)');
+    keyShade.addColorStop(1, 'rgba(255, 255, 255, 0.5)');
     /* White keys */
     for (i = 0; i < whites.length; i++) {
       k = whites[i];
@@ -485,6 +510,9 @@
       var isTarget = (target !== null && soundingMidi(k) === target);
       c.fillStyle = down ? '#e8e0cc' : '#fffdf6';
       E.roundRect(c, k.x + 1, k.y, k.w - 2, k.h + (down ? 3 : 0), 5);
+      c.fill();
+      /* ivory: shaded under the fallboard, a rounded lip at the front */
+      c.fillStyle = keyShade;
       c.fill();
       c.strokeStyle = '#6b5a44';
       c.lineWidth = 1.5;
@@ -510,9 +538,17 @@
       k = blacks[i];
       var bdown = !!pressed[k.midi];
       var btarget = (target !== null && soundingMidi(k) === target);
+      /* the shadow each black key throws on the ivory beside it */
+      if (!bdown) {
+        c.fillStyle = 'rgba(30, 20, 60, 0.26)';
+        E.roundRect(c, k.x + 3, k.y, k.w + 2, k.h + 5, 4);
+        c.fill();
+      }
       c.fillStyle = bdown ? '#4a4038' : '#2a231c';
       E.roundRect(c, k.x, k.y, k.w, k.h + (bdown ? 3 : 0), 4);
       c.fill();
+      c.fillStyle = 'rgba(255, 255, 255, 0.1)';
+      c.fillRect(k.x + 2.5, k.y + 2, 3, k.h - 12);
       c.strokeStyle = '#15100b';
       c.lineWidth = 1.5;
       c.stroke();

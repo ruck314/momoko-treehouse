@@ -35,6 +35,141 @@
   /* Called once the web font loads, so signs repaint in it. */
   function clearSpriteCache() { spriteCache = {}; }
 
+  /* ---- Render effects ----
+     Every optional lighting / post layer checks one of these flags, so a
+     slow device (or a curious developer in the console) can switch them
+     off one by one. engine.js lowers Game.FX.level on its own when frames
+     run long: 0 = everything, 1 = no colour grade / sun shafts / soft
+     foreground, 2 = no effects at all. */
+  Game.FX = { level: 0, auto: true, glow: true, grade: true, vignette: true,
+              shafts: true, motes: true, foreground: true, dapple: true };
+  function fxOn(name) {
+    var F = Game.FX;
+    if (!F[name] || F.level >= 2) return false;
+    if (F.level >= 1 && (name === 'grade' || name === 'shafts' || name === 'foreground')) return false;
+    return true;
+  }
+
+  /* A sprite painted at a fixed low resolution whatever the screen's pixel
+     ratio, then stretched when drawn. Bilinear upscaling blurs it for
+     free, which is exactly what glows, light shafts, vignettes and
+     out-of-focus foliage want -- no ctx.filter needed. */
+  function getSoftSprite(key, w, h, res, drawFn) {
+    key = 'soft:' + key;
+    if (spriteCache[key]) return spriteCache[key];
+    var cv = document.createElement('canvas');
+    cv.lw = w; cv.lh = h;
+    cv.width = Math.max(1, Math.ceil(w * res));
+    cv.height = Math.max(1, Math.ceil(h * res));
+    var g = cv.getContext('2d');
+    g.scale(res, res);
+    drawFn(g);
+    spriteCache[key] = cv;
+    return cv;
+  }
+
+  /* Every flag that changes what a baked layer looks like, as a cache key. */
+  function fxSig() {
+    var F = Game.FX, out = 'L' + F.level;
+    for (var k in F) if (F[k] === false) out += k;
+    return out;
+  }
+
+  /* A whole backdrop painted once and then blitted every frame: drawFn
+     paints the rectangle (x, y, w, h) in the caller's own coordinates.
+     This is how the expensive layers (gradients, glows, the grade and
+     vignette) cost a single drawImage per frame. Each `slot` keeps only
+     its latest bake, so a resize, a room change or an effect toggle
+     replaces the old canvas instead of piling up memory. `res` is pixels
+     per logical unit: 0.5 for soft content, 0 for full device sharpness
+     (capped at 2x). */
+  var bakeSlot = {};
+  function getBaked(slot, variant, x, y, w, h, res, drawFn) {
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (!res) res = dpr;
+    var key = 'bake:' + slot + '|' + variant + '|' + x + ',' + y + ',' + w + ',' + h + '|' + res + '|' + fxSig();
+    if (spriteCache[key]) return spriteCache[key];
+    if (bakeSlot[slot]) delete spriteCache[bakeSlot[slot]];
+    bakeSlot[slot] = key;
+    var cv = document.createElement('canvas');
+    cv.lw = w; cv.lh = h;
+    cv.width = Math.max(1, Math.ceil(w * res));
+    cv.height = Math.max(1, Math.ceil(h * res));
+    var g = cv.getContext('2d');
+    g.scale(res, res);
+    g.translate(-x, -y);
+    drawFn(g);
+    spriteCache[key] = cv;
+    return cv;
+  }
+
+  /* Additive bloom for a light source: a cached radial falloff in `rgb`
+     ("255, 220, 140"), stamped at any size. */
+  function glow(c, x, y, r, rgb, alpha) {
+    if (!fxOn('glow')) return;
+    var spr = getSoftSprite('glow' + rgb, 64, 64, 1, function (g) {
+      var gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+      gr.addColorStop(0, 'rgba(' + rgb + ', 1)');
+      gr.addColorStop(0.25, 'rgba(' + rgb + ', 0.55)');
+      gr.addColorStop(0.6, 'rgba(' + rgb + ', 0.16)');
+      gr.addColorStop(1, 'rgba(' + rgb + ', 0)');
+      g.fillStyle = gr;
+      g.fillRect(0, 0, 64, 64);
+    });
+    var ga = c.globalAlpha, op = c.globalCompositeOperation;
+    c.globalAlpha = ga * (alpha === undefined ? 0.6 : alpha);
+    c.globalCompositeOperation = 'lighter';
+    c.drawImage(spr, x - r, y - r, r * 2, r * 2);
+    c.globalAlpha = ga;
+    c.globalCompositeOperation = op;
+  }
+
+  /* Final pass over a backdrop: a warm-to-cool soft-light grade so every
+     screen sits in the same afternoon light, then a vignette that pulls
+     the eye inward. A full-screen blend is far too slow to run every
+     frame on a software canvas, so this is only ever called while baking
+     a backdrop (see getBaked) -- at run time it is free. */
+  var softLightOK = null;
+  function postFX(c, x, y, w, h) {
+    if (fxOn('grade')) {
+      if (softLightOK === null) {
+        var op0 = c.globalCompositeOperation;
+        c.globalCompositeOperation = 'soft-light';
+        softLightOK = c.globalCompositeOperation === 'soft-light';
+        c.globalCompositeOperation = op0;
+      }
+      if (softLightOK) {
+        var gs = getSoftSprite('grade', 64, 64, 1, function (g) {
+          var gr = g.createLinearGradient(8, 0, 30, 64);
+          gr.addColorStop(0, '#ffd9a0');
+          gr.addColorStop(0.5, '#8a7f86');
+          gr.addColorStop(1, '#2f3f78');
+          g.fillStyle = gr;
+          g.fillRect(0, 0, 64, 64);
+        });
+        var ga = c.globalAlpha;
+        c.globalCompositeOperation = 'soft-light';
+        c.globalAlpha = ga * 0.34;
+        c.drawImage(gs, x, y, w, h);
+        c.globalAlpha = ga;
+        c.globalCompositeOperation = 'source-over';
+      }
+    }
+    if (fxOn('vignette')) {
+      var vs = getSoftSprite('vignette', 96, 60, 1, function (g) {
+        g.translate(48, 30);
+        g.scale(1, 60 / 96);
+        var gr = g.createRadialGradient(0, 0, 26, 0, 0, 62);
+        gr.addColorStop(0, 'rgba(24, 16, 44, 0)');
+        gr.addColorStop(0.55, 'rgba(24, 16, 44, 0.07)');
+        gr.addColorStop(1, 'rgba(24, 16, 44, 0.32)');
+        g.fillStyle = gr;
+        g.fillRect(-48, -48, 96, 96);
+      });
+      c.drawImage(vs, x, y, w, h);
+    }
+  }
+
   /* ---- Shape helpers ---- */
 
   /* Deterministic PRNG (LCG) so scattered scenery is identical every frame
@@ -53,9 +188,9 @@
     c.translate(cx, cy);
     c.scale(1, ry / rx);
     var g = c.createRadialGradient(0, 0, 0, 0, 0, rx);
-    g.addColorStop(0, 'rgba(36, 23, 8, ' + (alpha || 0.24) + ')');
-    g.addColorStop(0.6, 'rgba(36, 23, 8, ' + (alpha || 0.24) * 0.55 + ')');
-    g.addColorStop(1, 'rgba(36, 23, 8, 0)');
+    g.addColorStop(0, 'rgba(22, 24, 58, ' + (alpha || 0.24) + ')');
+    g.addColorStop(0.6, 'rgba(22, 24, 58, ' + (alpha || 0.24) * 0.55 + ')');
+    g.addColorStop(1, 'rgba(22, 24, 58, 0)');
     c.fillStyle = g;
     c.beginPath();
     c.arc(0, 0, rx, 0, Math.PI * 2);
@@ -63,8 +198,13 @@
     c.restore();
   }
 
-  function ink(c, w) {
-    c.strokeStyle = PAL.ink;
+  /* Outlines are PAL.ink by default. Painters that want a hue-tinted line
+     (dark green round foliage, dark rose round a pink dress) either pass
+     `col` or bracket a run of shapes with setInk(col) ... setInk(). */
+  var INK = PAL.ink;
+  function setInk(col) { INK = col || PAL.ink; }
+  function ink(c, w, col) {
+    c.strokeStyle = col || INK;
     c.lineWidth = w || 2;
     c.lineJoin = 'round';
     c.lineCap = 'round';
@@ -86,19 +226,42 @@
     c.closePath();
   }
 
+  /* Auto-shading for props built from plain shapes (furniture, the shop,
+     material icons). While it is on, every solid-colour shape drawn by
+     the three helpers below also gets a light-to-shade wash across its
+     own bounding box -- warm at the upper left, cool at the lower right --
+     and its outline takes a deep tint of its fill. The wash re-fills the
+     path that is already current, so it costs no clip. */
+  var autoShade = false;
+  function setAutoShade(on) { autoShade = !!on; }
+  function formLight(c, x, y, w, h, fill) {
+    if (typeof fill !== 'string' || fill.charAt(0) !== '#' || fill.length !== 7) return null;
+    var g = c.createLinearGradient(x, y, x + w * 0.35, y + h);
+    g.addColorStop(0, 'rgba(255, 246, 214, 0.36)');
+    g.addColorStop(0.45, 'rgba(255, 246, 214, 0)');
+    g.addColorStop(0.55, 'rgba(48, 30, 96, 0)');
+    g.addColorStop(1, 'rgba(48, 30, 96, 0.3)');
+    c.fillStyle = g;
+    c.fill();
+    return mix(inkOf(fill), PAL.ink, 0.45);
+  }
+
   function fillRound(c, x, y, w, h, r, fill, outline) {
     roundRect(c, x, y, w, h, r);
     c.fillStyle = fill;
     c.fill();
-    if (outline !== false) ink(c, 2);
+    var ic = autoShade ? formLight(c, x, y, w, h, fill) : null;
+    if (outline !== false) ink(c, 2, ic);
   }
 
   function fillEllipse(c, cx, cy, rx, ry, fill, outline) {
+    rx = Math.abs(rx); ry = Math.abs(ry);
     c.beginPath();
-    c.ellipse(cx, cy, Math.abs(rx), Math.abs(ry), 0, 0, Math.PI * 2);
+    c.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
     c.fillStyle = fill;
     c.fill();
-    if (outline !== false) ink(c, 2);
+    var ic = autoShade ? formLight(c, cx - rx, cy - ry, rx * 2, ry * 2, fill) : null;
+    if (outline !== false) ink(c, 2, ic);
   }
 
   function fillPath(c, pts, fill, close, outline) {
@@ -108,7 +271,16 @@
     if (close !== false) c.closePath();
     c.fillStyle = fill;
     c.fill();
-    if (outline !== false) ink(c, 2);
+    var ic = null;
+    if (autoShade) {
+      var x0 = pts[0][0], x1 = x0, y0 = pts[0][1], y1 = y0;
+      for (var k = 1; k < pts.length; k++) {
+        if (pts[k][0] < x0) x0 = pts[k][0]; else if (pts[k][0] > x1) x1 = pts[k][0];
+        if (pts[k][1] < y0) y0 = pts[k][1]; else if (pts[k][1] > y1) y1 = pts[k][1];
+      }
+      ic = formLight(c, x0, y0, x1 - x0, y1 - y0, fill);
+    }
+    if (outline !== false) ink(c, 2, ic);
   }
 
   /* Lighten / darken a hex colour by pct (-100..100). */
@@ -121,6 +293,23 @@
     }
     return '#' + ((1 << 24) + (adj(r) << 16) + (adj(g) << 8) + adj(b)).toString(16).slice(1);
   }
+
+  /* Blend two hex colours; k = 0 gives a, 1 gives b. Used to push shadows
+     toward a cool hue and highlights toward a warm one instead of just
+     darkening or lightening the base colour. */
+  var mixMemo = {};
+  function mix(a, b, k) {
+    var key = a + b + k;
+    if (mixMemo[key]) return mixMemo[key];
+    var x = parseInt(a.slice(1), 16), y = parseInt(b.slice(1), 16);
+    var r = Math.round(((x >> 16) & 255) * (1 - k) + ((y >> 16) & 255) * k);
+    var g = Math.round(((x >> 8) & 255) * (1 - k) + ((y >> 8) & 255) * k);
+    var bl = Math.round((x & 255) * (1 - k) + (y & 255) * k);
+    return (mixMemo[key] = '#' + ((1 << 24) + (r << 16) + (g << 8) + bl).toString(16).slice(1));
+  }
+  var COOL = '#2a2466', WARM = '#fff0b8';
+  /* Outline colour for a fill: the same hue, much deeper. */
+  function inkOf(hex) { return mix(shade(hex, -52), '#3a1a30', 0.3); }
 
   /* ==================================================================
      Characters
@@ -138,6 +327,11 @@
   /* Fill a shape, then tuck a shadow down its right side and a highlight
      up its left (the sun is top-left everywhere in this game), then ink
      the outline. pathFn traces the shape; it is called three times. */
+  /* Characters are mirrored to face left, but the sun does not move: LIT
+     is +1 when the character's local +x is the shaded (screen-right)
+     side and -1 when it has been flipped, so every shade and highlight
+     below stays on the same side of the screen whichever way she faces. */
+  var LIT = 1;
   function shadedFill(c, pathFn, col, inkW) {
     pathFn();
     c.fillStyle = col;
@@ -145,15 +339,44 @@
     c.save();
     pathFn();
     c.clip();
-    c.globalAlpha = 0.14;
-    c.fillStyle = '#2a1608';
-    c.fillRect(5, -80, 60, 120);
-    c.globalAlpha = 0.22;
-    c.fillStyle = '#ffffff';
-    c.fillRect(-65, -80, 58, 120);
+    /* a cel step of cool shade down the right, a warm lit edge on the
+       left -- never just a darker or paler copy of the base colour */
+    c.fillStyle = mix(col, COOL, 0.26);
+    c.fillRect(LIT > 0 ? 5.5 : -65.5, -80, 60, 120);
+    c.fillStyle = mix(col, WARM, 0.5);
+    c.fillRect(LIT > 0 ? -65 : 7, -80, 58, 120);
     c.restore();
     pathFn();
-    ink(c, inkW || 2);
+    ink(c, inkW || 2, inkOf(col));
+  }
+  /* A limb or small part: flat fill, cool shade on its right third, and an
+     outline in its own deepened hue. */
+  function partRound(c, x, y, w, h, r, col) {
+    roundRect(c, x, y, w, h, r);
+    c.fillStyle = col;
+    c.fill();
+    c.save();
+    c.clip();
+    c.fillStyle = mix(col, COOL, 0.24);
+    c.fillRect(LIT > 0 ? x + w * 0.62 : x - w * 0.62, y, w, h);
+    c.restore();
+    roundRect(c, x, y, w, h, r);
+    ink(c, 2, inkOf(col));
+  }
+  function partEllipse(c, cx, cy, rx, ry, col) {
+    c.beginPath();
+    c.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    c.fillStyle = col;
+    c.fill();
+    c.save();
+    c.clip();
+    fillEllipse(c, cx + LIT * rx * 0.5, cy + ry * 0.45, rx, ry, mix(col, COOL, 0.24), false);
+    fillEllipse(c, cx - LIT * rx * 0.3, cy - ry * 0.3, rx * 0.95, ry * 0.95, col, false);
+    fillEllipse(c, cx - LIT * rx * 0.32, cy - ry * 0.42, rx * 0.4, ry * 0.3, mix(col, WARM, 0.45), false);
+    c.restore();
+    c.beginPath();
+    c.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ink(c, 2, inkOf(col));
   }
   function polyPath(c, pts) {
     return function () {
@@ -172,29 +395,40 @@
     if (back) {
       /* Behind-the-head volume, painted before the face. A shade darker
          than the fringe so it sits behind it. */
-      col = shade(col, -9);
+      col = mix(col, COOL, 0.12);
+      setInk(inkOf(cust.hair));
       switch (cust.hairStyle) {
         case 'twinTails':
-          fillEllipse(c, -r - 6, hy + 6, 7, 12, col);
-          fillEllipse(c, r + 6, hy + 6, 7, 12, col);
+          partEllipse(c, -r - 6, hy + 6, 7, 12, col);
+          partEllipse(c, r + 6, hy + 6, 7, 12, col);
           break;
         case 'longBraids':
-          fillRound(c, -r - 6, hy - 2, 8, 26, 4, col);
-          fillRound(c, r - 2, hy - 2, 8, 26, 4, col);
+          partRound(c, -r - 6, hy - 2, 8, 26, 4, col);
+          partRound(c, r - 2, hy - 2, 8, 26, 4, col);
+          /* plait crossings */
+          c.strokeStyle = inkOf(cust.hair);
+          c.lineWidth = 1.2;
+          c.globalAlpha = 0.6;
+          for (var pb = 0; pb < 3; pb++) {
+            c.beginPath(); c.moveTo(-r - 5, hy + 4 + pb * 6); c.lineTo(-r + 1, hy + 7 + pb * 6); c.stroke();
+            c.beginPath(); c.moveTo(r - 1, hy + 7 + pb * 6); c.lineTo(r + 5, hy + 4 + pb * 6); c.stroke();
+          }
+          c.globalAlpha = 1;
           fillEllipse(c, -r - 2, hy + 25, 4, 4, dark);
           fillEllipse(c, r + 2, hy + 25, 4, 4, dark);
           break;
         case 'buns':
-          fillEllipse(c, -r - 4, hy - 6, 7, 7, col);
-          fillEllipse(c, r + 4, hy - 6, 7, 7, col);
+          partEllipse(c, -r - 4, hy - 6, 7, 7, col);
+          partEllipse(c, r + 4, hy - 6, 7, 7, col);
           break;
         case 'ponytail':
-          fillPath(c, [[r - 2, hy - 4], [r + 12, hy + 4], [r + 9, hy + 20], [r + 1, hy + 8]], col);
+          shadedFill(c, polyPath(c, [[r - 2, hy - 4], [r + 12, hy + 4], [r + 9, hy + 20], [r + 1, hy + 8]]), col);
           break;
         case 'bob':
-          fillEllipse(c, 0, hy + 3, r + 3, r + 2, col);
+          partEllipse(c, 0, hy + 3, r + 3, r + 2, col);
           break;
       }
+      setInk();
     } else {
       /* Fringe over the forehead. */
       c.save();
@@ -203,32 +437,47 @@
       c.closePath();
       c.fillStyle = col;
       c.fill();
-      /* darker along the hairline, where the fringe shades the brow */
+      /* cool shade down the right of the crown, darker along the
+         hairline where the fringe shades the brow */
       c.clip();
-      c.globalAlpha = 0.3;
-      fillEllipse(c, 1, hy + 1, r + 2, 4.5, dark, false);
+      fillEllipse(c, LIT * r * 0.9, hy - 2, r * 0.75, r * 1.3, mix(col, COOL, 0.26), false);
+      c.globalAlpha = 0.34;
+      fillEllipse(c, 1, hy + 1, r + 2, 4.5, mix(dark, COOL, 0.3), false);
+      c.globalAlpha = 1;
+      /* the glossy band every well-brushed head of hair has */
+      c.strokeStyle = mix(col, '#fff6dc', 0.62);
+      c.lineWidth = 2.6;
+      c.lineCap = 'round';
+      c.beginPath();
+      if (LIT > 0) c.arc(0, hy, r - 3.2, Math.PI * 1.17, Math.PI * 1.56);
+      else c.arc(0, hy, r - 3.2, Math.PI * 1.44, Math.PI * 1.83);
+      c.stroke();
+      c.strokeStyle = mix(col, '#fff6dc', 0.4);
+      c.lineWidth = 1.4;
+      c.beginPath();
+      if (LIT > 0) c.arc(0, hy, r - 3.2, Math.PI * 1.63, Math.PI * 1.74);
+      else c.arc(0, hy, r - 3.2, Math.PI * 1.26, Math.PI * 1.37);
+      c.stroke();
       c.restore();
       c.beginPath();
       c.arc(0, hy, r + 1.5, Math.PI, Math.PI * 2);
       c.closePath();
-      ink(c, 2);
+      ink(c, 2, inkOf(cust.hair));
       if (cust.hairStyle === 'bob') {
-        fillRound(c, -r - 2, hy - 2, 5, 14, 2.5, col);
-        fillRound(c, r - 3, hy - 2, 5, 14, 2.5, col);
+        setInk(inkOf(cust.hair));
+        fillRound(c, -r - 2, hy - 2, 5, 14, 2.5, LIT > 0 ? col : mix(col, COOL, 0.22));
+        fillRound(c, r - 3, hy - 2, 5, 14, 2.5, LIT > 0 ? mix(col, COOL, 0.22) : col);
+        setInk();
       }
-      /* A soft highlight so flat hair still reads as round. */
-      c.save();
-      c.globalAlpha = 0.4;
-      fillEllipse(c, -5, hy - 8, 5.5, 2.8, shade(col, 45), false);
-      c.restore();
     }
   }
 
   function drawOutfit(c, cust, legSwing) {
     var col = cust.outfitColor;
-    var dark = shade(col, -20);
-    var light = shade(col, 22);
+    var dark = mix(col, COOL, 0.3);
+    var light = mix(col, WARM, 0.5);
     var top = CH.torsoTop, bot = CH.torsoBot;
+    setInk(inkOf(col));
 
     switch (cust.outfit) {
       case 'frillyDress':
@@ -283,6 +532,7 @@
         fillRound(c, -6, top - 1, 12, 4, 2, light);
         break;
     }
+    setInk();
     return legSwing;
   }
 
@@ -301,6 +551,16 @@
 
   function drawShoe(c, cust, x, y) {
     var col = cust.shoeColor;
+    setInk(inkOf(col));
+    drawShoeShape(c, cust, x, y, col);
+    /* toe-cap shine */
+    c.save();
+    c.globalAlpha = 0.5;
+    fillEllipse(c, x - 2, y - (cust.shoes === 'boots' ? 8.5 : 3.8), 1.8, 0.9, '#ffffff', false);
+    c.restore();
+    setInk();
+  }
+  function drawShoeShape(c, cust, x, y, col) {
     switch (cust.shoes) {
       case 'maryJane':
         fillRound(c, x - 5, y - 5, 10, 6, 3, col);
@@ -323,12 +583,16 @@
     var hy = CH.headY, r = CH.headR;
     switch (cust.hat) {
       case 'strawHat':
-        fillEllipse(c, 0, hy - 6, r + 10, 5, '#e8c76a');
-        fillEllipse(c, 0, hy - 11, r - 2, 7, '#f0d585');
+        setInk(inkOf('#e8c76a'));
+        /* the brim shades the brow */
+        fillEllipse(c, 1, hy - 3.5, r + 6, 3, 'rgba(70, 30, 90, 0.2)', false);
+        partEllipse(c, 0, hy - 6, r + 10, 5, '#e8c76a');
+        partEllipse(c, 0, hy - 11, r - 2, 7, '#f0d585');
         fillRound(c, -r + 1, hy - 10, (r - 1) * 2, 4, 2, '#c05a48');
         break;
       case 'beret':
-        fillEllipse(c, -1, hy - 10, r + 2, 7, cust.outfitColor);
+        setInk(inkOf(cust.outfitColor));
+        partEllipse(c, -1, hy - 10, r + 2, 7, cust.outfitColor);
         fillEllipse(c, 6, hy - 15, 2.5, 2.5, shade(cust.outfitColor, -25));
         break;
       case 'flowerCrown':
@@ -340,24 +604,29 @@
         }
         break;
     }
+    setInk();
   }
 
   function drawAccessory(c, cust) {
     switch (cust.accessory) {
       case 'scarf':
+        setInk(inkOf('#c05a48'));
         fillRound(c, -10, CH.torsoTop - 3, 20, 6, 3, '#c05a48');
         fillPath(c, [[4, CH.torsoTop + 2], [10, CH.torsoTop + 3], [8, CH.torsoTop + 15], [3, CH.torsoTop + 13]], '#c05a48');
         break;
       case 'backpack':
+        setInk(inkOf('#4e8f3c'));
         fillRound(c, -15, CH.torsoTop + 2, 8, 14, 3, '#4e8f3c');
         fillRound(c, -14, CH.torsoTop + 6, 6, 4, 2, shade('#4e8f3c', -25));
         break;
       case 'ribbon':
+        setInk(inkOf(PAL.peach));
         fillEllipse(c, -6, CH.headY - CH.headR + 1, 4.5, 3.5, PAL.peach);
         fillEllipse(c, 2, CH.headY - CH.headR + 1, 4.5, 3.5, PAL.peach);
         fillEllipse(c, -2, CH.headY - CH.headR + 1, 2, 2, shade(PAL.peach, -25));
         break;
     }
+    setInk();
   }
 
   function drawFace(c, cust, blink) {
@@ -368,24 +637,33 @@
       c.beginPath(); c.moveTo(-7, hy + 1); c.lineTo(-2, hy + 1); c.stroke();
       c.beginPath(); c.moveTo(2, hy + 1); c.lineTo(7, hy + 1); c.stroke();
     } else {
-      fillEllipse(c, -4.5, hy + 1, 2.4, 3, PAL.ink, false);
-      fillEllipse(c, 4.5, hy + 1, 2.4, 3, PAL.ink, false);
-      fillEllipse(c, -3.7, hy - 0.1, 0.95, 1.15, '#ffffff', false);
-      fillEllipse(c, 5.3, hy - 0.1, 0.95, 1.15, '#ffffff', false);
+      for (var ey = -1; ey <= 1; ey += 2) {
+        fillEllipse(c, ey * 4.5, hy + 1, 2.5, 3.1, '#33201a', false);
+        /* warm iris glow in the lower half */
+        c.save();
+        c.beginPath(); c.ellipse(ey * 4.5, hy + 1, 2.5, 3.1, 0, 0, Math.PI * 2); c.clip();
+        fillEllipse(c, ey * 4.5, hy + 3.6, 2.4, 1.9, '#8a4f2c', false);
+        c.restore();
+      }
+      fillEllipse(c, -3.7, hy - 0.2, 1.05, 1.25, '#ffffff', false);
+      fillEllipse(c, 5.3, hy - 0.2, 1.05, 1.25, '#ffffff', false);
       /* a tiny lower catchlight gives the eyes a wet sparkle */
       fillEllipse(c, -5.2, hy + 2.6, 0.5, 0.5, '#ffffff', false);
       fillEllipse(c, 3.8, hy + 2.6, 0.5, 0.5, '#ffffff', false);
     }
     /* Blush */
     c.save();
-    c.globalAlpha = 0.5;
-    fillEllipse(c, -8, hy + 5, 3, 2, PAL.peach, false);
-    fillEllipse(c, 8, hy + 5, 3, 2, PAL.peach, false);
+    c.globalAlpha = 0.55;
+    fillEllipse(c, -8, hy + 5, 3.2, 2.1, '#ff8fa8', false);
+    fillEllipse(c, 8, hy + 5, 3.2, 2.1, '#ff8fa8', false);
+    c.globalAlpha = 0.7;
+    fillEllipse(c, -8.6, hy + 4.4, 0.9, 0.5, '#ffffff', false);
+    fillEllipse(c, 7.4, hy + 4.4, 0.9, 0.5, '#ffffff', false);
     c.restore();
     /* Smile */
     c.beginPath();
     c.arc(0, hy + 4, 3.2, 0.15 * Math.PI, 0.85 * Math.PI);
-    c.strokeStyle = PAL.ink;
+    c.strokeStyle = '#7a3a34';
     c.lineWidth = 1.6;
     c.lineCap = 'round';
     c.stroke();
@@ -400,6 +678,7 @@
     c.save();
     c.translate(x, y);
     c.scale(sc * f, sc);
+    LIT = f < 0 ? -1 : 1;
 
     var swing = 0, bob = 0;
     if (frame > 0) {
@@ -408,48 +687,65 @@
     }
 
     /* Ground shadow -- painted before the walk bob so it stays planted. */
-    softShadow(c, 0, 1, 18 - (lift || 0) * 0.4, 4.5, 0.26);
+    softShadow(c, 2 * LIT, 1, 19 - (lift || 0) * 0.4, 4.8, 0.36);
     c.translate(0, bob - (lift || 0));
 
     drawHair(c, cust, true);
 
-    /* Legs */
-    fillRound(c, -7 + swing * 0.5, CH.torsoBot, 6, 12, 3, cust.skin);
-    fillRound(c, 1 - swing * 0.5, CH.torsoBot, 6, 12, 3, cust.skin);
+    /* Skin shades toward a warm rose, not grey; its outline is a deep
+       version of the same tone. */
+    var skin = cust.skin;
+    var skinShade = mix(skin, '#b0456a', 0.26);
+    var skinInk = inkOf(skin);
+    setInk(skinInk);
+
+    /* Legs, the far one in shade, both shaded under the hem */
+    fillRound(c, -7 + swing * 0.5, CH.torsoBot, 6, 12, 3, LIT > 0 ? skin : skinShade);
+    fillRound(c, 1 - swing * 0.5, CH.torsoBot, 6, 12, 3, LIT > 0 ? skinShade : skin);
+    c.fillStyle = 'rgba(70, 30, 90, 0.22)';
+    c.fillRect(-7 + swing * 0.5, CH.torsoBot + 3, 6, 4.5);
+    c.fillRect(1 - swing * 0.5, CH.torsoBot + 3, 6, 4.5);
     drawShoe(c, cust, -4 + swing * 0.5, 0);
     drawShoe(c, cust, 4 - swing * 0.5, 0);
 
     /* Back arm, with a little hand so it reads as an arm not a stick.
-       A shade darker than the front one so the two don't merge. */
-    var skinBack = shade(cust.skin, -10);
-    fillRound(c, -13 - swing * 0.4, CH.torsoTop + 3, 5, 14, 2.5, skinBack);
-    fillEllipse(c, -10.5 - swing * 0.4, CH.torsoTop + 17, 3.4, 3.2, skinBack);
+       In shade, so the two arms don't merge. */
+    setInk(skinInk);
+    fillRound(c, -13 - swing * 0.4, CH.torsoTop + 3, 5, 14, 2.5, skinShade);
+    fillEllipse(c, -10.5 - swing * 0.4, CH.torsoTop + 17, 3.4, 3.2, skinShade);
+    setInk();
 
     drawOutfit(c, cust, swing);
+    /* the head's shadow across the collar */
+    fillEllipse(c, 1.5 * LIT, CH.torsoTop + 2.6, 8, 2.6, 'rgba(60, 26, 96, 0.24)', false);
 
     /* Front arm */
-    fillRound(c, 8 + swing * 0.4, CH.torsoTop + 3, 5, 14, 2.5, cust.skin);
-    fillEllipse(c, 10.5 + swing * 0.4, CH.torsoTop + 17, 3.4, 3.2, cust.skin);
+    setInk(skinInk);
+    partRound(c, 8 + swing * 0.4, CH.torsoTop + 3, 5, 14, 2.5, skin);
+    fillEllipse(c, 10.5 + swing * 0.4, CH.torsoTop + 17, 3.4, 3.2, skin);
+    setInk();
 
-    /* Head, with a soft shadow under the chin side so it reads as a ball */
-    fillEllipse(c, 0, CH.headY, CH.headR, CH.headR + 0.5, cust.skin, false);
+    /* Head: a lit ball -- rosy shade low on the right, clean light on the
+       upper left, and a fine rim of bounced light along the jaw */
+    fillEllipse(c, 0, CH.headY, CH.headR, CH.headR + 0.5, skinShade, false);
     c.save();
     c.beginPath();
     c.ellipse(0, CH.headY, CH.headR, CH.headR + 0.5, 0, 0, Math.PI * 2);
     c.clip();
+    fillEllipse(c, -1.6 * LIT, CH.headY - 1.8, CH.headR, CH.headR + 0.5, skin, false);
     c.globalAlpha = 0.5;
-    fillEllipse(c, 2.5, CH.headY + 3.5, CH.headR, CH.headR + 0.5, shade(cust.skin, -12), false);
+    fillEllipse(c, -5 * LIT, CH.headY - 2, 6, 7, mix(skin, '#ffffff', 0.5), false);
     c.globalAlpha = 1;
-    fillEllipse(c, -1, CH.headY - 1.2, CH.headR, CH.headR + 0.5, cust.skin, false);
     c.restore();
     c.beginPath();
     c.ellipse(0, CH.headY, CH.headR, CH.headR + 0.5, 0, 0, Math.PI * 2);
-    ink(c, 2);
+    ink(c, 2, skinInk);
     drawHair(c, cust, false);
     drawFace(c, cust, blink);
     drawHat(c, cust);
     drawAccessory(c, cust);
 
+    LIT = 1;
     c.restore();
   }
 
@@ -460,7 +756,10 @@
     c.arc(cx, cy, size / 2, 0, Math.PI * 2);
     c.closePath();
     c.clip();
-    c.fillStyle = PAL.sky;
+    var pg = c.createLinearGradient(0, cy - size / 2, 0, cy + size / 2);
+    pg.addColorStop(0, '#6fbfee');
+    pg.addColorStop(1, '#d9f1ee');
+    c.fillStyle = pg;
     c.fillRect(cx - size, cy - size, size * 2, size * 2);
     var sc = size / 46;
     drawCharacter(c, cx, cy + size * 0.72, cust, 0, 1, sc, false);
@@ -486,12 +785,23 @@
   var VIEW = { x: 0, y: 0, w: 800, h: 480 };
   function setView(x, y, w, h) { VIEW.x = x; VIEW.y = y; VIEW.w = w; VIEW.h = h; }
   var FLOWER_COLORS = ['#ff9ec4', '#ffd24a', '#fff4dc', '#b06aa8', '#8fd0e8'];
+  /* Far to near. Each ridge is a vertical gradient from its sunlit crest
+     (`top`) down into the haze pooled at its foot (`fill`), with a rim
+     light along the crest; the trees on it are a shade darker with a lit
+     side. Hue runs blue -> green and value light -> dark toward the
+     viewer, which is what gives the meadow its depth. */
   var RIDGES = [
-    { par: 0.12, base: 262, amp: 40, ph: 1.7, fill: '#bfdccb', rim: '#d9ece0', tree: '#aacfba', treeS: 0.55 },
-    { par: 0.26, base: 304, amp: 30, ph: 4.1, fill: '#a3cd90', rim: '#bfdeaf', tree: '#88bb7c', treeS: 0.78 },
-    { par: 0.45, base: 346, amp: 22, ph: 0.6, fill: '#86bd66', rim: '#9fcf7f', tree: '#6aa553', treeS: 1 },
+    { par: 0.05, base: 236, amp: 54, ph: 2.9, top: '#8fb9de', fill: '#bcd9ea', rim: '#cfe4f2', tree: null, treeS: 0, peak: true },
+    { par: 0.12, base: 268, amp: 40, ph: 1.7, top: '#7fbfb0', fill: '#a9d6c3', rim: '#b9e2cf', tree: '#6aae9e', lit: '#9ad0bd', treeS: 0.55 },
+    { par: 0.26, base: 306, amp: 30, ph: 4.1, top: '#52a662', fill: '#7cc274', rim: '#a0d888', tree: '#3d8f50', lit: '#6fba6a', treeS: 0.78 },
+    { par: 0.45, base: 346, amp: 22, ph: 0.6, top: '#3f9438', fill: '#5fae48', rim: '#8ccc5e', tree: '#27723a', lit: '#55a648', treeS: 1 },
   ];
   function ridgeY(r, wx) {
+    if (r.peak) {
+      /* distant mountains: sharper, with a couple of proud summits */
+      var m = 0.6 * Math.sin(wx * 0.0048 + r.ph) + 0.4 * Math.sin(wx * 0.0113 + r.ph * 1.9);
+      return r.base - r.amp * (0.25 + 0.75 * Math.abs(m)) + 5 * Math.sin(wx * 0.045);
+    }
     return r.base - r.amp * (0.55 * Math.sin(wx * 0.0062 + r.ph) +
                              0.3 * Math.sin(wx * 0.0151 + r.ph * 2.3) +
                              0.15 * Math.sin(wx * 0.037 + r.ph * 0.7));
@@ -499,13 +809,13 @@
 
   /* Tree positions along each ridge, in that ridge's own scroll space. */
   var ridgeTrees = null;
-  function buildRidgeTrees(worldW) {
+  function buildRidgeTrees(worldW, margin) {
     ridgeTrees = [];
     for (var i = 0; i < RIDGES.length; i++) {
       var rnd = seeded(101 + i * 977);
       var list = [];
-      var span = worldW * RIDGES[i].par + VIEW_W + 120;
-      for (var x = -60 + rnd() * 80; x < span; x += 46 + rnd() * 150) {
+      var span = worldW * RIDGES[i].par + VIEW_W + margin;
+      for (var x = -margin + rnd() * 80; x < span; x += 46 + rnd() * 150) {
         /* clumps: sometimes a second tree right beside the first */
         list.push({ x: x, s: 0.75 + rnd() * 0.5, pine: rnd() < 0.35 });
         if (rnd() < 0.3) list.push({ x: x + 14 + rnd() * 10, s: 0.6 + rnd() * 0.35, pine: rnd() < 0.5 });
@@ -514,14 +824,16 @@
     }
   }
 
-  function drawRidgeTree(c, x, y, s, pine, col) {
+  function drawRidgeTree(c, x, y, s, pine, col, lit) {
     if (pine) {
       fillPath(c, [[x, y - 30 * s], [x + 9 * s, y - 2 * s], [x - 9 * s, y - 2 * s]], col, true, false);
+      fillPath(c, [[x, y - 30 * s], [x - 1 * s, y - 2 * s], [x - 9 * s, y - 2 * s]], lit, true, false);
     } else {
       c.fillStyle = col;
       c.fillRect(x - 1.2 * s, y - 12 * s, 2.4 * s, 12 * s);
       fillEllipse(c, x, y - 17 * s, 9 * s, 10 * s, col, false);
       fillEllipse(c, x - 5 * s, y - 13 * s, 6 * s, 6 * s, col, false);
+      fillEllipse(c, x - 3 * s, y - 20 * s, 5.5 * s, 5 * s, lit, false);
     }
   }
 
@@ -552,49 +864,137 @@
     { f: 0.3, s: 1.0, a: 0.9, drift: 0.1, off: 1420 },
   ];
 
+  /* One cloud, painted once: the puffs are filled together with a single
+     top-to-bottom gradient (sunlit cream cap, cool lilac-blue belly), then
+     each gets its own bright crown so the mass reads as rounded volumes. */
+  var CLOUD_W = 150, CLOUD_H = 76;
   function drawSkyCloud(c, x, y, s, a) {
-    c.save();
-    c.globalAlpha = a;
-    c.translate(x, y);
-    c.scale(s, s);
-    /* shaded underside first, then the sunlit puffs over it */
-    fillEllipse(c, 0, 10, 62, 16, '#e3eff4', false);
-    fillEllipse(c, -34, 4, 30, 20, '#ffffff', false);
-    fillEllipse(c, 34, 6, 26, 17, '#ffffff', false);
-    fillEllipse(c, 0, -8, 40, 27, '#ffffff', false);
-    fillEllipse(c, -14, -16, 18, 12, 'rgba(255,255,255,0.9)', false);
-    c.restore();
+    /* One sprite per size, and drawn on whole device pixels, so every
+       cloud is a plain unscaled copy (clouds drift far too slowly for
+       the half-pixel snap to show). */
+    var w = Math.ceil(CLOUD_W * s), h = Math.ceil(CLOUD_H * s);
+    var spr = getCachedSprite('skyCloud' + s.toFixed(3), w, h, function (g) {
+      g.scale(s, s);
+      g.translate(CLOUD_W / 2, 44);
+      var puffs = [[0, 12, 64, 15], [-36, 5, 30, 20], [36, 7, 27, 17], [0, -8, 40, 27], [-18, -14, 20, 15], [20, -6, 22, 16]];
+      var body = g.createLinearGradient(0, -36, 0, 28);
+      body.addColorStop(0, '#ffffff');
+      body.addColorStop(0.5, '#f7fbff');
+      body.addColorStop(0.8, '#cfe0f4');
+      body.addColorStop(1, '#b3c8ea');
+      g.fillStyle = body;
+      g.beginPath();
+      for (var i = 0; i < puffs.length; i++) {
+        g.moveTo(puffs[i][0] + puffs[i][2], puffs[i][1]);
+        g.ellipse(puffs[i][0], puffs[i][1], puffs[i][2], puffs[i][3], 0, 0, Math.PI * 2);
+      }
+      g.fill();
+      /* warm sunlit crowns, upper left of each puff */
+      for (var k = 1; k < puffs.length; k++) {
+        var p = puffs[k];
+        var hl = g.createRadialGradient(p[0] - p[2] * 0.3, p[1] - p[3] * 0.45, 0, p[0] - p[2] * 0.3, p[1] - p[3] * 0.45, p[2] * 0.8);
+        hl.addColorStop(0, 'rgba(255, 252, 236, 0.95)');
+        hl.addColorStop(1, 'rgba(255, 252, 236, 0)');
+        g.fillStyle = hl;
+        g.beginPath();
+        g.ellipse(p[0], p[1], p[2], p[3], 0, 0, Math.PI * 2);
+        g.fill();
+      }
+    });
+    var ga = c.globalAlpha;
+    var dpr = Math.min(3, window.devicePixelRatio || 1);
+    c.globalAlpha = ga * a;
+    c.drawImage(spr, Math.round((x - CLOUD_W / 2 * s) * dpr) / dpr, Math.round((y - 44 * s) * dpr) / dpr, spr.lw, spr.lh);
+    c.globalAlpha = ga;
   }
 
+  /* The sun: a wide additive halo, slowly turning rays, then a disc that
+     is hot white at the core and deep gold at the limb. */
+  function drawSun(c, x, y, t) {
+    drawSunHalo(c, x, y, t * 0.0016);
+    drawSunDisc(c, x, y);
+  }
+  function drawSunHalo(c, x, y, rot) {
+    glow(c, x, y, 150, '255, 232, 150', 0.5);
+    var rays = getSoftSprite('sunRays', 220, 220, 1, function (g) {
+      g.translate(110, 110);
+      for (var i = 0; i < 12; i++) {
+        var a = i * Math.PI / 6, len = i % 2 ? 78 : 104, hw = 0.085;
+        var gr = g.createRadialGradient(0, 0, 30, 0, 0, len);
+        gr.addColorStop(0, 'rgba(255, 240, 170, 0.5)');
+        gr.addColorStop(1, 'rgba(255, 240, 170, 0)');
+        g.fillStyle = gr;
+        g.beginPath();
+        g.moveTo(Math.cos(a - hw) * 30, Math.sin(a - hw) * 30);
+        g.lineTo(Math.cos(a) * len, Math.sin(a) * len);
+        g.lineTo(Math.cos(a + hw) * 30, Math.sin(a + hw) * 30);
+        g.closePath();
+        g.fill();
+      }
+    });
+    c.save();
+    c.translate(x, y);
+    c.rotate(rot);
+    c.drawImage(rays, -110, -110, 220, 220);
+    c.restore();
+  }
+  function drawSunDisc(c, x, y) {
+    var disc = getCachedSprite('sunDisc', 68, 68, function (g) {
+      var gr = g.createRadialGradient(28, 27, 2, 34, 34, 31);
+      gr.addColorStop(0, '#fffbe0');
+      gr.addColorStop(0.45, '#ffe168');
+      gr.addColorStop(0.85, '#ffc93a');
+      gr.addColorStop(1, '#f7ad2a');
+      g.fillStyle = gr;
+      g.beginPath();
+      g.arc(34, 34, 30, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = 'rgba(255, 246, 200, 0.7)';
+      g.lineWidth = 1.5;
+      g.stroke();
+    });
+    drawSprite(c, disc, x - 34, y - 34);
+  }
+
+  var SKY_TOP = '#4fa9e3';
   function drawMeadowSky(c, camX, t, groundY, worldW, sunX) {
     var vx0 = VIEW.x, vx1 = VIEW.x + VIEW.w, Wv = VIEW.w;
-    var g = c.createLinearGradient(0, 0, 0, groundY);
-    g.addColorStop(0, '#9cd4ea');
-    g.addColorStop(0.5, PAL.sky);
-    g.addColorStop(0.82, '#e4f3dc');
-    g.addColorStop(1, '#f5f0d6');
-    c.fillStyle = g;
-    c.fillRect(vx0, VIEW.y, Wv, groundY - VIEW.y);
-    /* On tablets the sky runs on above the viewport: deepen it towards
-       the top so that band reads as open sky, not a blank wall. */
-    if (VIEW.y < 0) {
-      var tg = c.createLinearGradient(0, VIEW.y, 0, 0);
-      tg.addColorStop(0, '#7dc2e0');
-      tg.addColorStop(1, '#9cd4ea');
-      c.fillStyle = tg;
-      c.fillRect(vx0, VIEW.y, Wv, -VIEW.y);
-    }
-
     /* Sun with a soft halo. It sits between the build HUD (left) and the
        bag (right), not behind them; the title screen moves it aside. */
-    var sx0 = sunX === undefined ? 470 : sunX;
-    var sg = c.createRadialGradient(sx0, 62, 20, sx0, 62, 92);
-    sg.addColorStop(0, 'rgba(255, 236, 160, 0.55)');
-    sg.addColorStop(1, 'rgba(255, 236, 160, 0)');
-    c.fillStyle = sg;
-    c.fillRect(sx0 - 100, 0, 200, 160);
-    fillEllipse(c, sx0, 62, 30, 30, PAL.sun, false);
-    fillEllipse(c, sx0 - 8, 54, 14, 12, 'rgba(255,255,255,0.35)', false);
+    var sx0 = sunX === undefined ? 470 : sunX;   /* null = no sun in this view */
+    var vy = VIEW.y, vh = VIEW.h;
+    /* Everything in the sky that never moves is one baked image: the
+       gradient, the sun's halo and rays, the shafts of light fanning down
+       from it, and the grade and vignette for this view. */
+    /* It is all soft, so on a tablet menu (where it covers the whole
+       screen) it is baked at half size; in play it is baked 1:1, which
+       blits fastest. */
+    var skyRes = Wv * (groundY - vy) > 400000 ? 0.5 : 0;
+    var sky = getBaked('sky' + sx0 + '_' + groundY, '', vx0, vy, Wv, groundY - vy, skyRes, function (g) {
+      var gr = g.createLinearGradient(0, 0, 0, groundY);
+      gr.addColorStop(0, SKY_TOP);
+      gr.addColorStop(0.42, '#8ccdf0');
+      gr.addColorStop(0.72, '#c9e9ee');
+      gr.addColorStop(1, '#fdf0c2');
+      g.fillStyle = gr;
+      g.fillRect(vx0, vy, Wv, groundY - vy);
+      /* On tablets the sky runs on above the viewport: deepen it towards
+         the top so that band reads as open sky, not a blank wall. */
+      if (vy < 0) {
+        var tg = g.createLinearGradient(0, vy, 0, 0);
+        tg.addColorStop(0, '#2f86cf');
+        tg.addColorStop(1, SKY_TOP);
+        g.fillStyle = tg;
+        g.fillRect(vx0, vy, Wv, -vy);
+      }
+      if (sx0 !== null) {
+        drawSunHalo(g, sx0, 62, 0.26);
+        drawSunShafts(g, sx0);
+      }
+      postFX(g, vx0, vy, Wv, vh);
+    });
+    c.drawImage(sky, vx0, vy, Wv, groundY - vy);
+    if (sx0 !== null) drawSunDisc(c, sx0, 62);
 
     var wrap = Wv + 340;
     for (var i = 0; i < CLOUDS.length; i++) {
@@ -629,39 +1029,76 @@
       c.restore();
     }
 
-    if (!ridgeTrees) buildRidgeTrees(worldW || 2600);
+    /* The ridges are baked into long strips and scrolled. */
+    var margin = Math.max(0, -vx0, vx1 - VIEW_W);
+    if (!ridgeStrips || margin > ridgeMargin) buildRidgeStrips(worldW || 2600, margin);
+    for (var r = 0; r < RIDGES.length; r++) {
+      var st = ridgeStrips[r];
+      var hgt = Math.min(st.lh, groundY - st.top);
+      /* whole source pixels only: an unscaled copy is several times
+         cheaper than a resampled one */
+      c.drawImage(st, Math.round((vx0 + camX * RIDGES[r].par - st.x0) * st.res), 0, Wv * st.res, hgt * st.res,
+                  vx0, st.top, Wv, hgt);
+    }
+  }
+
+  /* One strip per ridge, covering every scroll position plus `margin` on
+     each side for the bezels: the hill with its gradient and rim light,
+     its trees, and (on the nearest one) the haze where the far fields
+     meet the meadow. Far ridges are baked a little soft on purpose. */
+  var ridgeStrips = null, ridgeMargin = -1;
+  function buildRidgeStrips(worldW, margin) {
+    ridgeMargin = Math.ceil(margin / 100) * 100 + 40;
+    buildRidgeTrees(worldW, ridgeMargin);
+    ridgeStrips = [];
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    var bottom = 444;
     for (var r = 0; r < RIDGES.length; r++) {
       var R = RIDGES[r];
-      var off = camX * R.par;
-      c.beginPath();
-      c.moveTo(vx0, groundY);
-      for (var sx = vx0; sx <= vx1; sx += 10) c.lineTo(sx, ridgeY(R, sx + off));
-      c.lineTo(vx1, groundY);
-      c.closePath();
-      c.fillStyle = R.fill;
-      c.fill();
+      var res = dpr;
+      var x0 = -ridgeMargin, w = worldW * R.par + VIEW_W + 2 * ridgeMargin;
+      var top = Math.floor(R.base - R.amp - 34 * R.treeS - 12);
+      var cv = document.createElement('canvas');
+      cv.x0 = x0; cv.top = top; cv.res = res; cv.lh = bottom - top;   /* top is whole */
+      cv.width = Math.ceil(w * res);
+      cv.height = Math.ceil(cv.lh * res);
+      var g = cv.getContext('2d');
+      g.scale(res, res);
+      g.translate(-x0, -top);
+      var x;
+      g.beginPath();
+      g.moveTo(x0, bottom);
+      for (x = x0; x <= x0 + w; x += 8) g.lineTo(x, ridgeY(R, x));
+      g.lineTo(x0 + w, bottom);
+      g.closePath();
+      var rg = g.createLinearGradient(0, R.base - R.amp, 0, 400);
+      rg.addColorStop(0, R.top);
+      rg.addColorStop(0.75, R.fill);
+      g.fillStyle = rg;
+      g.fill();
       /* rim light along the crest */
-      c.beginPath();
-      for (var rx = vx0; rx <= vx1; rx += 10) {
-        if (rx === vx0) c.moveTo(rx, ridgeY(R, rx + off) + 1.5);
-        else c.lineTo(rx, ridgeY(R, rx + off) + 1.5);
+      g.beginPath();
+      for (x = x0; x <= x0 + w; x += 8) {
+        if (x === x0) g.moveTo(x, ridgeY(R, x) + 1.5); else g.lineTo(x, ridgeY(R, x) + 1.5);
       }
-      c.strokeStyle = R.rim;
-      c.lineWidth = 2.5;
-      c.stroke();
-      var trees = ridgeTrees[r];
-      for (var k = 0; k < trees.length; k++) {
-        var tx = trees[k].x - off;
-        if (tx < vx0 - 30 || tx > vx1 + 30) continue;
-        drawRidgeTree(c, tx, ridgeY(R, trees[k].x) + 3, R.treeS * trees[k].s, trees[k].pine, R.tree);
+      g.strokeStyle = R.rim;
+      g.lineWidth = 2.5;
+      g.stroke();
+      if (R.tree) {
+        var trees = ridgeTrees[r];
+        for (var k = 0; k < trees.length; k++) {
+          drawRidgeTree(g, trees[k].x, ridgeY(R, trees[k].x) + 3, R.treeS * trees[k].s, trees[k].pine, R.tree, R.lit);
+        }
       }
+      if (r === RIDGES.length - 1) {
+        var hz = g.createLinearGradient(0, 330, 0, 400);
+        hz.addColorStop(0, 'rgba(253, 244, 200, 0)');
+        hz.addColorStop(1, 'rgba(253, 244, 200, 0.34)');
+        g.fillStyle = hz;
+        g.fillRect(x0, 330, w, bottom - 330);
+      }
+      ridgeStrips.push(cv);
     }
-    /* a breath of haze where the far fields meet the meadow */
-    var hz = c.createLinearGradient(0, groundY - 70, 0, groundY);
-    hz.addColorStop(0, 'rgba(245, 240, 214, 0)');
-    hz.addColorStop(1, 'rgba(245, 240, 214, 0.28)');
-    c.fillStyle = hz;
-    c.fillRect(vx0, groundY - 70, Wv, 70);
   }
 
   /* ---- Foreground: grass band, dirt path, tufts and little flowers ----
@@ -689,14 +1126,7 @@
       var from = M.shop.doorX - 70, to = M.tree.x + 40;
       var fans = [M.shop.doorX, M.tree.x - 118];
 
-      var gr = g.createLinearGradient(0, gy, 0, gy + gh);
-      gr.addColorStop(0, '#78bb51');
-      gr.addColorStop(1, '#5c9a3d');
-      g.fillStyle = gr;
-      g.fillRect(0, gy, M.width, gh);
-      /* the meadow's back edge, slightly shaded where it meets the hills */
-      g.fillStyle = 'rgba(75, 132, 51, 0.55)';
-      g.fillRect(0, gy, M.width, 3);
+      paintGrassBase(g, 0, gy, M.width, gh, rnd);
 
       /* path: soil with a darker lower edge and a worn, lighter middle */
       var x, d;
@@ -705,17 +1135,24 @@
       for (x = from; x <= to; x += 6) g.lineTo(x, gy + 3 + pathDepth(x, from, to, fans));
       g.lineTo(to, gy + 3);
       g.closePath();
-      g.fillStyle = '#d6b27a';
+      var pg = g.createLinearGradient(0, gy, 0, gy + 30);
+      pg.addColorStop(0, '#c99c62');
+      pg.addColorStop(0.3, '#e6c589');
+      pg.addColorStop(1, '#d2a86c');
+      g.fillStyle = pg;
       g.fill();
-      g.strokeStyle = '#b88f58';
-      g.lineWidth = 2;
+      /* the bank casts a thin shadow onto the back of the path */
+      g.fillStyle = 'rgba(92, 58, 24, 0.28)';
+      g.fillRect(from + 20, gy + 3, to - from - 40, 2.5);
+      g.strokeStyle = '#a5743f';
+      g.lineWidth = 2.5;
       g.beginPath();
       for (x = from; x <= to; x += 6) {
         d = pathDepth(x, from, to, fans);
         if (x === from) g.moveTo(x, gy + 3 + d); else g.lineTo(x, gy + 3 + d);
       }
       g.stroke();
-      g.fillStyle = 'rgba(244, 222, 176, 0.55)';
+      g.fillStyle = 'rgba(255, 238, 196, 0.6)';
       for (x = from + 40; x < to - 40; x += 8) {
         d = pathDepth(x, from, to, fans);
         g.fillRect(x, gy + 3 + d * 0.3, 8, d * 0.25);
@@ -725,7 +1162,7 @@
         x = from + rnd() * (to - from);
         d = pathDepth(x, from, to, fans);
         if (d < 6) continue;
-        fillEllipse(g, x, gy + 5 + rnd() * (d - 4), 1.6 + rnd() * 1.6, 1 + rnd(), rnd() < 0.5 ? '#bf9b65' : '#ecd5a8', false);
+        fillEllipse(g, x, gy + 5 + rnd() * (d - 4), 1.6 + rnd() * 1.6, 1 + rnd(), rnd() < 0.5 ? '#a97d4a' : '#f6e2b6', false);
       }
 
       /* grass tufts, bigger toward the viewer */
@@ -736,7 +1173,7 @@
         if (y < gy + 3 + pathDepth(x, from, to, fans) + 5) continue;
         var near = (y - gy) / gh;
         var hgt = 4 + near * 6 + rnd() * 3;
-        g.strokeStyle = rnd() < 0.55 ? 'rgba(66, 120, 44, 0.75)' : 'rgba(150, 210, 104, 0.85)';
+        g.strokeStyle = rnd() < 0.55 ? 'rgba(38, 98, 40, 0.85)' : 'rgba(176, 228, 104, 0.9)';
         g.lineWidth = 1.3 + near;
         for (var b = -1; b <= 1; b++) {
           g.beginPath();
@@ -748,7 +1185,7 @@
       /* verge tufts along the back edge, wherever the path isn't */
       for (x = 4; x < M.width; x += 7 + rnd() * 16) {
         if (pathDepth(x, from, to, fans) > 0.5) continue;
-        g.strokeStyle = 'rgba(75, 132, 51, 0.8)';
+        g.strokeStyle = 'rgba(52, 116, 44, 0.9)';
         g.lineWidth = 1.4;
         g.beginPath();
         g.moveTo(x, gy + 4); g.quadraticCurveTo(x + 1, gy, x + 3, gy - 3);
@@ -762,6 +1199,7 @@
         if (fy < gy + 3 + pathDepth(x, from, to, fans) + 8) continue;
         var col = FLOWER_COLORS[Math.floor(rnd() * FLOWER_COLORS.length)];
         var fr = 1.5 + (fy - gy) / gh * 1.3;
+        fillEllipse(g, x + 1.5, fy + fr * 1.5, fr * 1.9, fr * 0.8, 'rgba(22, 60, 24, 0.3)', false);
         for (var q = 0; q < 5; q++) {
           var a = q * Math.PI * 2 / 5;
           fillEllipse(g, x + Math.cos(a) * fr, fy + Math.sin(a) * fr, fr * 0.8, fr * 0.8, col, false);
@@ -772,6 +1210,52 @@
     drawSprite(c, spr, -camX, groundY - GROUND_LIP);
   }
 
+  /* Meadow turf shared by the level strip and the menu backdrops: sunlit
+     at the back, deep and cool at the viewer's feet, broken up with soft
+     light and shade patches so it never reads as one flat green. */
+  var GRASS_BACK = '#84ca4e', GRASS_MID = '#4c9a3c', GRASS_FRONT = '#286f36';
+  function paintGrassBase(g, x0, gy, w, gh, rnd, detailOnly) {
+    /* detailOnly leaves the base colour to the caller (the menus lay one
+       gradient down the whole view and put this over it). */
+    if (!detailOnly) {
+      var gr = g.createLinearGradient(0, gy, 0, gy + gh);
+      gr.addColorStop(0, GRASS_BACK);
+      gr.addColorStop(0.45, GRASS_MID);
+      gr.addColorStop(1, GRASS_FRONT);
+      g.fillStyle = gr;
+      g.fillRect(x0, gy, w, gh);
+    }
+    for (var i = 0; i < w / 26; i++) {
+      var px = x0 + rnd() * w, py = gy + 10 + rnd() * (gh - 10);
+      var prx = 30 + rnd() * 60, pry = 4 + rnd() * 7;
+      g.save();
+      g.translate(px, py);
+      g.scale(1, pry / prx);
+      var pr = g.createRadialGradient(0, 0, 0, 0, 0, prx);
+      var lightPatch = rnd() < 0.5;
+      pr.addColorStop(0, lightPatch ? 'rgba(206, 240, 120, 0.22)' : 'rgba(18, 70, 40, 0.2)');
+      pr.addColorStop(1, lightPatch ? 'rgba(206, 240, 120, 0)' : 'rgba(18, 70, 40, 0)');
+      g.fillStyle = pr;
+      /* drawn three times so a patch crossing an end wraps round: the
+         strip tiles across tablet bezels without a seam */
+      for (var wr = -1; wr <= 1; wr++) {
+        g.beginPath();
+        g.arc(wr * w, 0, prx, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.restore();
+    }
+    /* the back edge: a bright sunlit lip over a line of shade */
+    g.fillStyle = 'rgba(40, 104, 44, 0.6)';
+    g.fillRect(x0, gy, w, 3);
+    g.fillStyle = 'rgba(214, 244, 130, 0.5)';
+    g.fillRect(x0, gy + 3, w, 1.5);
+  }
+
+  /* Outline for foliage: a deep green instead of the brown ink, so leaves
+     look lit rather than drawn round. */
+  var LEAF_INK = '#24512a';
+
   /* Foreground knolls, shaded so they read as rounded. */
   function drawHill(c, d) {
     c.beginPath();
@@ -779,10 +1263,20 @@
     c.quadraticCurveTo(d.x, d.y - d.h, d.x + d.w / 2, d.y);
     c.closePath();
     var g = c.createLinearGradient(0, d.y - d.h / 2, 0, d.y);
-    g.addColorStop(0, shade(PAL.grass, -4));
-    g.addColorStop(1, shade(PAL.grass, -16));
+    g.addColorStop(0, '#6fbb48');
+    g.addColorStop(1, '#368538');
     c.fillStyle = g;
     c.fill();
+    /* sunlit crest */
+    c.beginPath();
+    for (var u = 0.14; u <= 0.6; u += 0.046) {
+      var hx = d.x - d.w / 2 + d.w * u, hy = d.y - 2 * u * (1 - u) * d.h + 3;
+      if (u === 0.14) c.moveTo(hx, hy); else c.lineTo(hx, hy);
+    }
+    c.strokeStyle = 'rgba(206, 240, 130, 0.55)';
+    c.lineWidth = 3;
+    c.lineCap = 'round';
+    c.stroke();
   }
 
   function drawBgTree(c, d) {
@@ -793,6 +1287,7 @@
       g.save();
       g.translate(w / 2, h);
       g.scale(s, s);
+      softShadow(g, 8, -3, 62, 8, 0.3);
       /* trunk, lit from the upper left like everything else */
       fillPath(g, [[-11, 0], [-7, -90], [7, -90], [11, 0]], shade(PAL.bark, -8));
       g.save();
@@ -810,7 +1305,7 @@
         fillEllipse(g, k[0] + k[2] * 0.2, k[1] + k[3] * 0.6, k[2] * 1.05, k[3] * 0.6, shade(col, -16), false);
         fillEllipse(g, k[0] - k[2] * 0.3, k[1] - k[3] * 0.4, k[2] * 0.5, k[3] * 0.34, shade(col, 14), false);
         g.restore();
-        g.beginPath(); g.ellipse(k[0], k[1], k[2], k[3], 0, 0, Math.PI * 2); ink(g, 2);
+        g.beginPath(); g.ellipse(k[0], k[1], k[2], k[3], 0, 0, Math.PI * 2); ink(g, 2, LEAF_INK);
       }
       g.restore();
     });
@@ -838,7 +1333,7 @@
           g.fill();
         }
         g.restore();
-        g.beginPath(); g.ellipse(k[0], k[1], k[2], k[3], 0, 0, Math.PI * 2); ink(g, 2);
+        g.beginPath(); g.ellipse(k[0], k[1], k[2], k[3], 0, 0, Math.PI * 2); ink(g, 2, LEAF_INK);
       }
       /* a couple of berries so the bush isn't just green */
       fillEllipse(g, -22, -8, 2.4, 2.4, '#d9534f', false);
@@ -1041,6 +1536,141 @@
     }
   }
 
+  /* ---- Light and air ----
+     Screen-space layers the engine draws over the finished meadow. */
+
+  /* A few broad, soft shafts of sunlight slanting down across the sky
+     from the sun's side. Painted tiny and stretched, so they have no
+     edges; additive and screen-sized, so they only ever go into the
+     baked sky. */
+  function drawSunShafts(c, sunX) {
+    if (!fxOn('shafts')) return;
+    var spr = getSoftSprite('sunShafts', 800, 480, 0.06, function (g) {
+      /* [x where it leaves the top, width, strength] -- all lean the same way */
+      var beams = [[250, 70, 0.5], [372, 34, 0.32], [470, 96, 0.55], [600, 44, 0.36]];
+      var gr = g.createLinearGradient(0, 30, 0, 430);
+      gr.addColorStop(0, 'rgba(255, 246, 200, 0)');
+      gr.addColorStop(0.25, 'rgba(255, 246, 200, 1)');
+      gr.addColorStop(1, 'rgba(255, 246, 200, 0)');
+      g.fillStyle = gr;
+      for (var i = 0; i < beams.length; i++) {
+        var bx = beams[i][0], bw = beams[i][1];
+        g.globalAlpha = beams[i][2];
+        g.beginPath();
+        g.moveTo(bx, 30); g.lineTo(bx + bw, 30);
+        g.lineTo(bx + bw * 1.7 - 190, 440); g.lineTo(bx - bw * 0.7 - 190, 440);
+        g.closePath();
+        g.fill();
+      }
+    });
+    var ga = c.globalAlpha;
+    c.globalAlpha = ga * 0.22;
+    c.globalCompositeOperation = 'lighter';
+    c.drawImage(spr, sunX - 400, 0, 800, 480);
+    c.globalCompositeOperation = 'source-over';
+    c.globalAlpha = ga;
+  }
+
+  /* Pollen and dandelion fluff drifting on the breeze, catching the sun.
+     Pure function of t; `par` slides them against the camera. */
+  var MOTES = (function () {
+    var rnd = seeded(555), out = [];
+    for (var i = 0; i < 26; i++) {
+      out.push({ x: rnd() * 900, y: 150 + rnd() * 300, r: 1 + rnd() * 1.8, vx: 0.12 + rnd() * 0.3,
+                 ph: rnd() * 6.28, sw: 8 + rnd() * 16, par: 0.6 + rnd() * 0.7 });
+    }
+    return out;
+  })();
+  function drawMotes(c, camX, t, x0, w) {
+    if (!fxOn('motes')) return;
+    var wrap = w + 60, ga = c.globalAlpha;
+    c.fillStyle = '#fffbe0';
+    for (var i = 0; i < MOTES.length; i++) {
+      var m = MOTES[i];
+      var x = ((m.x + t * m.vx - camX * m.par) % wrap + wrap) % wrap - 30 + x0;
+      var y = m.y + Math.sin(t / 90 + m.ph) * m.sw;
+      var tw = 0.35 + 0.35 * Math.sin(t / 37 + m.ph * 3);
+      c.globalAlpha = ga * tw;
+      c.beginPath();
+      c.arc(x, y, m.r, 0, Math.PI * 2);
+      c.fill();
+      c.globalAlpha = ga * tw * 0.3;
+      c.beginPath();
+      c.arc(x, y, m.r * 2.6, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.globalAlpha = ga;
+  }
+
+  /* Out-of-focus grass and leaves between the camera and the scene. It
+     scrolls faster than the world (parallax > 1), which sells the depth
+     more than anything in the background does. Painted small and
+     stretched, so it is soft without a blur filter. */
+  var FG_W = 960, FG_H = 90;
+  function drawForeground(c, camX, bottomY, x0, w) {
+    if (!fxOn('foreground')) return;
+    var spr = getSoftSprite('foreground', FG_W, FG_H, 0.3, function (g) {
+      var rnd = seeded(4242);
+      var sh = g.createLinearGradient(0, FG_H - 26, 0, FG_H);
+      sh.addColorStop(0, 'rgba(14, 40, 44, 0)');
+      sh.addColorStop(1, 'rgba(14, 40, 44, 0.5)');
+      g.fillStyle = sh;
+      g.fillRect(0, FG_H - 26, FG_W, 26);
+      g.lineCap = 'round';
+      for (var k = 0; k < 10; k++) {
+        /* clumps wrap seamlessly: anything near an edge is drawn twice */
+        var cx = rnd() * FG_W, n = 7 + Math.floor(rnd() * 6), big = 0.7 + rnd() * 0.9;
+        for (var rep = -1; rep <= 1; rep++) {
+          var r2 = seeded(900 + k * 17);
+          for (var b = 0; b < n; b++) {
+            var bx = cx + rep * FG_W + (r2() - 0.5) * 70;
+            var hgt = (12 + r2() * 24) * big, lean = (r2() - 0.5) * 30;
+            g.strokeStyle = r2() < 0.7 ? 'rgba(20, 74, 40, 0.8)' : 'rgba(64, 132, 52, 0.8)';
+            g.lineWidth = 4 + r2() * 4;
+            g.beginPath();
+            g.moveTo(bx, FG_H + 6);
+            g.quadraticCurveTo(bx + lean * 0.2, FG_H - hgt * 0.6, bx + lean, FG_H - hgt);
+            g.stroke();
+          }
+        }
+      }
+    });
+    var off = ((camX * 1.45) % FG_W + FG_W) % FG_W;
+    for (var x = x0 - off; x < x0 + w; x += FG_W) {
+      c.drawImage(spr, x, bottomY - FG_H + 8, FG_W, FG_H);
+    }
+  }
+
+  /* The big tree's shade on the grass: a broad soft pool thrown to the
+     right (the sun is upper left), pierced by coins of dappled light.
+     World-space, drawn under the tree itself. */
+  function drawTreeShade(c, x, groundY) {
+    if (!fxOn('dapple')) return;
+    var w = 460, h = 84;
+    var spr = getSoftSprite('treeShade', w, h, 0.5, function (g) {
+      g.save();
+      g.translate(w / 2, 30);
+      g.scale(1, 0.15);
+      var gr = g.createRadialGradient(0, 0, 40, 0, 0, w / 2);
+      gr.addColorStop(0, 'rgba(8, 44, 50, 0.62)');
+      gr.addColorStop(0.7, 'rgba(8, 44, 50, 0.46)');
+      gr.addColorStop(1, 'rgba(10, 52, 46, 0)');
+      g.fillStyle = gr;
+      g.beginPath(); g.arc(0, 0, w / 2, 0, Math.PI * 2); g.fill();
+      g.restore();
+      var rnd = seeded(808);
+      g.globalCompositeOperation = 'destination-out';
+      for (var i = 0; i < 26; i++) {
+        var a = rnd() * 6.28, rr = Math.sqrt(rnd()) * 170;
+        g.beginPath();
+        g.ellipse(w / 2 + Math.cos(a) * rr, 30 + Math.sin(a) * rr * 0.13, 7 + rnd() * 13, 2 + rnd() * 2.6, 0, 0, Math.PI * 2);
+        g.fillStyle = 'rgba(0,0,0,' + (0.45 + rnd() * 0.4) + ')';
+        g.fill();
+      }
+    });
+    c.drawImage(spr, x - w / 2 + 34, groundY - 22, w, h);
+  }
+
   /* A pair of birds gliding across the sky, screen-space, slow. */
   function drawSkyBirds(c, t) {
     var wrap = VIEW.w + 300;
@@ -1144,10 +1774,45 @@
   }
 
   /* ---- The shop building ---- */
+  /* The building itself never changes, so it is painted once (per
+     language: the sign has words on it); only the chimney smoke and the
+     awning move, and they are drawn live over it. */
   function drawShop(c, x, groundY, t) {
+    var lang = (window.Game && Game.i18n) ? Game.i18n.getLang() : 'en';
+    var spr = getCachedSprite('shopBody_' + lang + fxSig(), 380, 262, function (g) {
+      setAutoShade(true);
+      drawShopBody(g, 190, 252, 0, 1);
+      setAutoShade(false);
+      /* warm light spilling from the window */
+      glow(g, 190 - 89, 252 - 82, 62, '255, 220, 140', 0.4);
+    });
+    drawSprite(c, spr, x - 190, groundY - 252);
+    setAutoShade(true);
+    drawShopBody(c, x, groundY, t, 2);
+    setAutoShade(false);
+  }
+  /* part 1 = the static building, 2 = the moving bits. */
+  function drawShopBody(c, x, groundY, t, part) {
     var w = 300, h = 210;
     var left = x - w / 2;
     var top = groundY - h;
+
+    if (part === 2) {
+      c.save();
+      c.globalAlpha = 0.5;
+      var puff = Math.sin(t / 50) * 2;
+      fillEllipse(c, x + 80 + puff, top - 14, 6, 5, PAL.cream, false);
+      fillEllipse(c, x + 86 - puff, top - 24, 4.5, 4, PAL.cream, false);
+      c.restore();
+      /* awning */
+      var sway = Math.sin(t / 40) * 1.5;
+      for (var i = 0; i < 5; i++) {
+        var ax = left + 12 + i * 56;
+        fillPath(c, [[ax, top + 92], [ax + 56, top + 92], [ax + 46 + sway, top + 112], [ax + 10 + sway, top + 112]],
+          i % 2 === 0 ? '#c05a48' : PAL.cream);
+      }
+      return;
+    }
 
     /* body */
     fillRound(c, left, top + 46, w, h - 46, 8, '#e8cfa8');
@@ -1184,15 +1849,9 @@
       c.beginPath(); c.moveTo(x - half, ry); c.lineTo(x + half, ry); c.stroke();
     }
     c.restore();
-    /* chimney with a lazy puff of smoke */
+    /* chimney (its lazy puff of smoke is drawn live) */
     fillRound(c, x + 70, top + 2, 18, 30, 2, '#c05a48');
     fillRound(c, x + 67, top - 2, 24, 7, 2, shade('#c05a48', -18));
-    c.save();
-    c.globalAlpha = 0.5;
-    var puff = Math.sin(t / 50) * 2;
-    fillEllipse(c, x + 80 + puff, top - 14, 6, 5, PAL.cream, false);
-    fillEllipse(c, x + 86 - puff, top - 24, 4.5, 4, PAL.cream, false);
-    c.restore();
 
     /* sign board */
     fillRound(c, x - 96, top + 56, 192, 30, 6, '#c05a48');
@@ -1244,13 +1903,6 @@
     /* doormat */
     fillRound(c, dx - 6, groundY - 5, doorW + 12, 7, 3, '#c05a48');
 
-    /* awning */
-    var sway = Math.sin(t / 40) * 1.5;
-    for (var i = 0; i < 5; i++) {
-      var ax = left + 12 + i * 56;
-      fillPath(c, [[ax, top + 92], [ax + 56, top + 92], [ax + 46 + sway, top + 112], [ax + 10 + sway, top + 112]],
-        i % 2 === 0 ? '#c05a48' : PAL.cream);
-    }
 
     /* barrel of planks out front */
     fillRound(c, left - 6, groundY - 46, 40, 46, 6, PAL.bark);
@@ -1265,6 +1917,12 @@
      Drawn centred on (cx, cy), fitting roughly a `size` box.
      ================================================================== */
   function drawMaterialIcon(c, type, cx, cy, size) {
+    var was = autoShade;
+    setAutoShade(true);
+    drawMaterialIconBody(c, type, cx, cy, size);
+    setAutoShade(was);
+  }
+  function drawMaterialIconBody(c, type, cx, cy, size) {
     var s = size / 40;
     c.save();
     c.translate(cx, cy);
@@ -1524,6 +2182,25 @@
     star: star,
     seeded: seeded,
     softShadow: softShadow,
+    setInk: setInk,
+    setAutoShade: setAutoShade,
+    mix: mix,
+    inkOf: inkOf,
+    COOL: COOL,
+    WARM: WARM,
+    LEAF_INK: LEAF_INK,
+    fxOn: fxOn,
+    glow: glow,
+    postFX: postFX,
+    getSoftSprite: getSoftSprite,
+    getBaked: getBaked,
+    fxSig: fxSig,
+    paintGrassBase: paintGrassBase,
+    drawSun: drawSun,
+    drawSkyCloud: drawSkyCloud,
+    drawMotes: drawMotes,
+    drawForeground: drawForeground,
+    drawTreeShade: drawTreeShade,
     drawMeadowSky: drawMeadowSky,
     drawMeadowGround: drawMeadowGround,
     drawCharacter: drawCharacter,

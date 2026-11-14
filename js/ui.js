@@ -27,11 +27,21 @@
   function clipGame(c) { c.beginPath(); c.rect(0, 0, W, H); c.clip(); }
   /* Grass from gy down to the bottom of the view, under the painted band. */
   function fillViewGrass(c, gy) {
-    var gg = c.createLinearGradient(0, gy, 0, H);
-    gg.addColorStop(0, '#78bb51');
-    gg.addColorStop(1, '#5c9a3d');
+    /* One gradient from the sunlit back edge to the deep grass at the
+       very bottom of the view, however tall that is, so a tablet's extra
+       meadow below the viewport is lit ground and not a flat slab. */
+    var gg = c.createLinearGradient(0, gy, 0, Math.max(H, VIEW.y + VIEW.h));
+    gg.addColorStop(0, '#84ca4e');
+    gg.addColorStop(0.45, '#4c9a3c');
+    gg.addColorStop(1, '#286f36');
     c.fillStyle = gg;
     c.fillRect(VIEW.x, gy, VIEW.w, VIEW.y + VIEW.h - gy);
+  }
+  /* Air over a finished menu backdrop, out to the edges of the view:
+     drifting pollen. (The grade and vignette are baked into the sky.)
+     Call it before clipGame() so the bezel on tablets gets it too. */
+  function lightBackdrop(c) {
+    E.drawMotes(c, 0, t, VIEW.x, VIEW.w);
   }
 
   /* ================================================================
@@ -75,29 +85,102 @@
     var oy = pressed ? 2 : 0;
     c.save();
     if (!pressed) {
-      c.fillStyle = 'rgba(36, 23, 8, 0.28)';
+      /* two-layer shadow: a wide soft one and a tight dark one */
+      c.fillStyle = 'rgba(28, 20, 60, 0.14)';
+      E.roundRect(c, b.x - 1.5, b.y + 5.5, b.w + 3, b.h, r + 1.5);
+      c.fill();
+      c.fillStyle = 'rgba(28, 20, 60, 0.34)';
       E.roundRect(c, b.x, b.y + 3, b.w, b.h, r);
       c.fill();
     }
     c.fillStyle = fill;
     E.roundRect(c, b.x, b.y + oy, b.w, b.h, r);
     c.fill();
+    /* body: lighter toward the top, deeper toward the bottom edge */
+    var bg = c.createLinearGradient(0, b.y + oy, 0, b.y + oy + b.h);
+    bg.addColorStop(0, 'rgba(255, 255, 255, 0.34)');
+    bg.addColorStop(0.5, 'rgba(255, 255, 255, 0)');
+    bg.addColorStop(0.5, 'rgba(96, 40, 60, 0)');
+    bg.addColorStop(1, 'rgba(96, 40, 60, 0.2)');
+    c.fillStyle = bg;
+    c.fill();
     if (hot) {
       c.fillStyle = 'rgba(255, 255, 255, 0.28)';
       c.fill();
     }
-    /* Soft top gloss */
-    c.fillStyle = 'rgba(255, 255, 255, 0.3)';
-    E.roundRect(c, b.x + 3, b.y + oy + 2, b.w - 6, b.h * 0.42, Math.max(2, r - 3));
+    /* Glossy cap */
+    var cg = c.createLinearGradient(0, b.y + oy + 2, 0, b.y + oy + 2 + b.h * 0.44);
+    cg.addColorStop(0, 'rgba(255, 255, 255, 0.5)');
+    cg.addColorStop(1, 'rgba(255, 255, 255, 0.12)');
+    c.fillStyle = cg;
+    E.roundRect(c, b.x + 3, b.y + oy + 2.5, b.w - 6, b.h * 0.42, Math.max(2, r - 3));
     c.fill();
+    /* A slow glint sweeping across the buttons that matter most */
+    if (opts.shine && !opts.disabled) {
+      var sx = b.x - 40 + ((t % 260) / 70) * (b.w + 80);
+      if (sx < b.x + b.w + 40) {
+        c.save();
+        E.roundRect(c, b.x, b.y + oy, b.w, b.h, r);
+        c.clip();
+        c.fillStyle = 'rgba(255, 255, 255, 0.42)';
+        c.beginPath();
+        c.moveTo(sx, b.y + oy + b.h); c.lineTo(sx + 16, b.y + oy);
+        c.lineTo(sx + 30, b.y + oy); c.lineTo(sx + 14, b.y + oy + b.h);
+        c.closePath();
+        c.fill();
+        c.restore();
+      }
+    }
+    /* hairline of light just inside the outline */
+    c.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+    c.lineWidth = 1.2;
+    E.roundRect(c, b.x + 1.8, b.y + oy + 1.8, b.w - 3.6, b.h - 3.6, Math.max(1, r - 1.6));
+    c.stroke();
     E.roundRect(c, b.x, b.y + oy, b.w, b.h, r);
-    E.ink(c, opts.active || hot ? 3 : 2);
+    E.ink(c, opts.active || hot ? 3 : 2, uiInk(fill));
     c.fillStyle = opts.disabled ? '#6d6459' : PAL.ink;
     fitFont(c, label, b.w - 12, opts.font || 15, 'bold');
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     c.fillText(label, b.x + b.w / 2, b.y + oy + b.h / 2 + 1);
     c.restore();
+  }
+
+  /* Outline for a UI fill: strong colours get a deep line of their own
+     hue, creams and translucent fills keep the brown ink. */
+  function uiInk(fill) {
+    if (typeof fill !== 'string' || fill.charAt(0) !== '#' || fill.length !== 7) return PAL.ink;
+    var n = parseInt(fill.slice(1), 16);
+    var r = (n >> 16) & 255, g = (n >> 8) & 255, bl = n & 255;
+    var mx = Math.max(r, g, bl), mn = Math.min(r, g, bl);
+    if (mx === 0 || (mx - mn) / mx < 0.3) return PAL.ink;
+    return E.mix(E.inkOf(fill), PAL.ink, 0.4);
+  }
+
+  /* A raised tile or card: drop shadow, the fill (set by the caller as
+     c.fillStyle), a sheen down from the top edge, a hairline of light
+     inside the outline, then the ink. */
+  function tile(c, x, y, w, h, r, inkW, inkCol) {
+    var fill = c.fillStyle;
+    c.fillStyle = 'rgba(28, 20, 60, 0.22)';
+    E.roundRect(c, x, y + 3, w, h, r);
+    c.fill();
+    c.fillStyle = fill;
+    E.roundRect(c, x, y, w, h, r);
+    c.fill();
+    var g = c.createLinearGradient(0, y, 0, y + h);
+    g.addColorStop(0, 'rgba(255, 255, 255, 0.42)');
+    g.addColorStop(0.4, 'rgba(255, 255, 255, 0)');
+    g.addColorStop(0.7, 'rgba(120, 70, 50, 0)');
+    g.addColorStop(1, 'rgba(120, 70, 50, 0.13)');
+    c.fillStyle = g;
+    c.fill();
+    c.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+    c.lineWidth = 1.2;
+    E.roundRect(c, x + 1.8, y + 1.8, w - 3.6, h - 3.6, Math.max(1, r - 1.6));
+    c.stroke();
+    E.roundRect(c, x, y, w, h, r);
+    E.ink(c, inkW || 2, inkCol);
   }
 
   /* Hover tint for selectable tiles (grid cells, swatches, portraits). */
@@ -144,9 +227,24 @@
   function panel(c, x, y, w, h, fill, alpha) {
     c.save();
     if (alpha !== undefined) c.globalAlpha = alpha;
+    c.fillStyle = 'rgba(28, 20, 60, 0.2)';
+    E.roundRect(c, x, y + 4, w, h, 10);
+    c.fill();
     c.fillStyle = fill || 'rgba(255, 244, 220, 0.92)';
     E.roundRect(c, x, y, w, h, 10);
     c.fill();
+    /* parchment: a touch brighter at the top, warmer at the foot */
+    var g = c.createLinearGradient(0, y, 0, y + h);
+    g.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+    g.addColorStop(Math.min(0.5, 26 / h), 'rgba(255, 255, 255, 0)');
+    g.addColorStop(Math.max(0.5, 1 - 40 / h), 'rgba(196, 140, 80, 0)');
+    g.addColorStop(1, 'rgba(196, 140, 80, 0.16)');
+    c.fillStyle = g;
+    c.fill();
+    c.strokeStyle = 'rgba(255, 255, 255, 0.65)';
+    c.lineWidth = 1.2;
+    E.roundRect(c, x + 1.8, y + 1.8, w - 3.6, h - 3.6, 8.4);
+    c.stroke();
     c.restore();
     E.roundRect(c, x, y, w, h, 10);
     E.ink(c, 2);
@@ -221,11 +319,12 @@
     /* The same sky and far hills as the meadow, sun moved off the title. */
     E.drawMeadowSky(c, 640, t, TITLE_GROUND, Game.MEADOW.width, 724);
     drawTitleGround(c);
+    lightBackdrop(c);
     c.save();
     clipGame(c);
 
     /* A finished tree house, with Momoko and Lila out front */
-    E.softShadow(c, 172, TITLE_GROUND + 8, 96, 7, 0.2);
+    E.softShadow(c, 186, TITLE_GROUND + 9, 110, 8, 0.36);
     c.save();
     c.translate(172, TITLE_GROUND + 8);
     c.scale(0.6, 0.6);
@@ -242,35 +341,59 @@
       0, 1, 1.1, (t % 260) < 8);
     drawButterflies(c);
 
-    /* Title */
+    /* Title. The logo is six thick text strokes, so it is painted once
+       (per language) and the bobbing is just a blit, snapped to whole
+       device pixels. */
     var bob = Math.sin(t / 40) * 3;
-    c.save();
-    c.textAlign = 'center';
-    c.textBaseline = 'middle';
-    c.lineJoin = 'round';
-    c.font = 'bold 30px ' + FONT;
-    c.strokeStyle = 'rgba(255, 250, 236, 0.92)';
-    c.lineWidth = 6;
-    c.strokeText(T('title'), TITLE_CX, 106 + bob);
-    c.fillStyle = PAL.ink;
-    c.fillText(T('title'), TITLE_CX, 106 + bob);
-    fitFont(c, T('title2'), 360, 58, 'bold', 30);
-    c.fillStyle = 'rgba(36, 23, 8, 0.22)';
-    c.fillText(T('title2'), TITLE_CX + 2, 162 + bob + 4);
-    c.strokeStyle = PAL.cream;
-    c.lineWidth = 9;
-    c.strokeText(T('title2'), TITLE_CX, 162 + bob);
-    c.fillStyle = '#3b6b2a';
-    c.fillText(T('title2'), TITLE_CX, 162 + bob);
-    /* subtitle sits on a little cream ribbon so clouds never wash it out */
-    c.font = 'bold 15px ' + FONT;
-    var sw = c.measureText(T('titleSubtitle')).width + 30;
-    c.fillStyle = 'rgba(255, 244, 220, 0.85)';
-    E.roundRect(c, TITLE_CX - sw / 2, 200 + bob, sw, 26, 13);
-    c.fill();
-    c.fillStyle = '#5a7a3a';
-    c.fillText(T('titleSubtitle'), TITLE_CX, 214 + bob);
-    c.restore();
+    var logo = E.getCachedSprite('titleLogo_' + Game.i18n.getLang(), 420, 160, function (g) {
+      g.translate(210 - TITLE_CX, -76);
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.lineJoin = 'round';
+      g.font = 'bold 30px ' + FONT;
+      g.strokeStyle = 'rgba(40, 24, 70, 0.22)';
+      g.lineWidth = 7;
+      g.strokeText(T('title'), TITLE_CX, 109);
+      g.strokeStyle = '#fffaec';
+      g.lineWidth = 6;
+      g.strokeText(T('title'), TITLE_CX, 106);
+      g.fillStyle = PAL.ink;
+      g.fillText(T('title'), TITLE_CX, 106);
+      /* Logo: deep drop shadow, a dark-green keyline, a thick cream
+         border, then leaf-green letters lit from above. */
+      fitFont(g, T('title2'), 360, 58, 'bold', 30);
+      g.strokeStyle = 'rgba(30, 24, 70, 0.26)';
+      g.lineWidth = 14;
+      g.strokeText(T('title2'), TITLE_CX, 162 + 6);
+      g.strokeStyle = '#2c5a26';
+      g.lineWidth = 13;
+      g.strokeText(T('title2'), TITLE_CX, 162);
+      g.strokeStyle = '#fffaec';
+      g.lineWidth = 9;
+      g.strokeText(T('title2'), TITLE_CX, 162);
+      var lg = g.createLinearGradient(0, 136, 0, 190);
+      lg.addColorStop(0, '#7ccf4a');
+      lg.addColorStop(0.5, '#3f9438');
+      lg.addColorStop(1, '#236b34');
+      g.fillStyle = lg;
+      g.fillText(T('title2'), TITLE_CX, 162);
+      /* subtitle sits on a little cream ribbon so clouds never wash it out */
+      g.font = 'bold 15px ' + FONT;
+      var sw = g.measureText(T('titleSubtitle')).width + 30;
+      g.fillStyle = 'rgba(28, 20, 60, 0.18)';
+      E.roundRect(g, TITLE_CX - sw / 2, 202.5, sw, 26, 13);
+      g.fill();
+      g.fillStyle = 'rgba(255, 248, 228, 0.95)';
+      E.roundRect(g, TITLE_CX - sw / 2, 200, sw, 26, 13);
+      g.fill();
+      g.strokeStyle = 'rgba(123, 196, 90, 0.9)';
+      g.lineWidth = 1.5;
+      g.stroke();
+      g.fillStyle = '#3f7a34';
+      g.fillText(T('titleSubtitle'), TITLE_CX, 214);
+    });
+    var dpr = Math.min(3, window.devicePixelRatio || 1);
+    c.drawImage(logo, TITLE_CX - 210, Math.round((76 + bob) * dpr) / dpr, logo.lw, logo.lh);
     /* Pop the viewport clip so the overlays below can dim the whole
        tablet screen, bezel included. */
     c.restore();
@@ -287,7 +410,7 @@
       return;
     }
 
-    button(c, TITLE_BTN.play, T('play'), { font: 22, activeFill: PAL.sun, fill: PAL.sun, r: 12 });
+    button(c, TITLE_BTN.play, T('play'), { font: 22, activeFill: PAL.sun, fill: PAL.sun, r: 12, shine: true });
     button(c, TITLE_BTN.how, T('howToPlay'), { font: 15 });
     button(c, TITLE_BTN.lang, T('language') + ': ' + T('langLabel'), { font: 14 });
     button(c, TITLE_BTN.sound, Game.audio.isMuted() ? T('soundOff') : T('soundOn'), { font: 14 });
@@ -299,28 +422,18 @@
   /* Grass band with tufts and flowers, painted once. */
   function drawTitleGround(c, groundY) {
     var gy = groundY || TITLE_GROUND, gh = H - TITLE_GROUND;
-    /* `flat` paints the same tufts and flowers on plain deep grass with
-       no top edge, for the rows tiled below the viewport on tablets, so
-       the bezel grass has no repeating seams. */
+    /* Both sprites are transparent detail laid over fillViewGrass(): the
+       top band has the light and shade patches and the sunlit back edge;
+       `flat` is just tufts and flowers, for the rows tiled below the
+       viewport on tablets, so the bezel grass has no repeating seams. */
     function paintGrass(g, flat) {
       var rnd = E.seeded(77);
-      if (flat) {
-        g.fillStyle = '#5c9a3d';
-        g.fillRect(0, 0, W, gh + 6);
-      } else {
-        var gr = g.createLinearGradient(0, 6, 0, gh + 6);
-        gr.addColorStop(0, '#78bb51');
-        gr.addColorStop(1, '#5c9a3d');
-        g.fillStyle = gr;
-        g.fillRect(0, 6, W, gh);
-        g.fillStyle = 'rgba(75, 132, 51, 0.55)';
-        g.fillRect(0, 6, W, 3);
-      }
+      if (!flat) E.paintGrassBase(g, 0, 6, W, gh, E.seeded(78), true);
       g.lineCap = 'round';
       for (var i = 0; i < 110; i++) {
         var x = rnd() * W, y = 14 + rnd() * (gh - 10);
         var hgt = 4 + (y / gh) * 6 + rnd() * 3;
-        g.strokeStyle = rnd() < 0.55 ? 'rgba(66, 120, 44, 0.75)' : 'rgba(150, 210, 104, 0.85)';
+        g.strokeStyle = rnd() < 0.55 ? 'rgba(30, 90, 40, 0.85)' : 'rgba(176, 228, 104, 0.9)';
         g.lineWidth = 1.4;
         for (var b = -1; b <= 1; b++) {
           g.beginPath();
@@ -348,9 +461,10 @@
     for (var tx = Math.floor(VIEW.x / W) * W; tx < x1; tx += W) {
       c.drawImage(spr, tx, gy - 6, spr.lw, spr.lh);
     }
-    if (y1 > H) {
+    var bandBottom = gy - 6 + spr.lh;
+    if (y1 > bandBottom) {
       var deep = E.getCachedSprite('titleGroundDeep', W, gh + 6, function (g) { paintGrass(g, true); });
-      for (var ty = H; ty < y1; ty += deep.lh) {
+      for (var ty = bandBottom; ty < y1; ty += deep.lh) {
         for (var tx2 = Math.floor(VIEW.x / W) * W; tx2 < x1; tx2 += W) {
           c.drawImage(deep, tx2, ty, deep.lw, deep.lh);
         }
@@ -394,6 +508,7 @@
     panel(c, 110, 100, 580, 280, PAL.cream);
     c.fillStyle = PAL.ink;
     c.font = 'bold 20px "M PLUS Rounded 1c", sans-serif';
+    c.textAlign = 'center';
     c.fillText(T('howToPlay'), W / 2, 134);
     c.font = '15px "M PLUS Rounded 1c", sans-serif';
     multiline(c, T('instructions'), W / 2, 190, 24);
@@ -463,8 +578,9 @@
   function drawIntroScreen(c) {
     t++;
     /* The same meadow as the title so the menus read as one place. */
-    E.drawMeadowSky(c, 640, t, TITLE_GROUND, Game.MEADOW.width, 724);
+    E.drawMeadowSky(c, 640, t, TITLE_GROUND, Game.MEADOW.width, null);   /* no sun: it would sit behind the picture */
     drawTitleGround(c);
+    lightBackdrop(c);
     clipGame(c);
 
     drawIntroPicture(c);
@@ -514,51 +630,84 @@
       y += lh;
     }
 
-    button(c, INTRO_BTN, T('continueBtn'), { fill: PAL.sun, font: 16 });
+    button(c, INTRO_BTN, T('continueBtn'), { fill: PAL.sun, font: 16, shine: true });
   }
 
   /* Little framed outdoor scene -- sky, sun, a far hill and grass -- shared
      by the intro picture and the designer previews. Caller clips. */
   function sceneBackdrop(c, x, y, w, h, gy) {
     var sky = c.createLinearGradient(0, y, 0, gy);
-    sky.addColorStop(0, '#9cd4ea');
-    sky.addColorStop(1, '#e4f3dc');
+    sky.addColorStop(0, '#4fa9e3');
+    sky.addColorStop(0.55, '#9ad6f2');
+    sky.addColorStop(1, '#fdf0c2');
     c.fillStyle = sky;
     c.fillRect(x, y, w, gy - y);
     var sx = x + w - 50, sy = y + 50;
-    var sg = c.createRadialGradient(sx, sy, 12, sx, sy, 60);
-    sg.addColorStop(0, 'rgba(255, 236, 160, 0.5)');
-    sg.addColorStop(1, 'rgba(255, 236, 160, 0)');
-    c.fillStyle = sg;
-    c.fillRect(sx - 60, sy - 60, 120, 120);
-    E.fillEllipse(c, sx, sy, 22, 22, PAL.sun, false);
-    E.fillEllipse(c, sx - 6, sy - 6, 10, 8, 'rgba(255,255,255,0.35)', false);
-    c.fillStyle = '#a3cd90';
+    c.save();
+    c.translate(sx, sy);
+    c.scale(0.72, 0.72);
+    E.drawSun(c, 0, 0, t);
+    c.restore();
+    E.drawSkyCloud(c, x + 58, y + 58, 0.5, 0.95);
+    /* two hills: a hazy blue-green one behind a sunlit green one */
+    var hg = c.createLinearGradient(0, gy - 96, 0, gy);
+    hg.addColorStop(0, '#7fbfb0');
+    hg.addColorStop(1, '#a9d6c3');
+    c.fillStyle = hg;
+    c.beginPath();
+    c.moveTo(x, gy - 52);
+    c.quadraticCurveTo(x + w * 0.72, gy - 110, x + w, gy - 60);
+    c.lineTo(x + w, gy); c.lineTo(x, gy);
+    c.fill();
+    hg = c.createLinearGradient(0, gy - 62, 0, gy);
+    hg.addColorStop(0, '#63b46a');
+    hg.addColorStop(1, '#8fcd82');
+    c.fillStyle = hg;
     c.beginPath();
     c.moveTo(x, gy - 30);
     c.quadraticCurveTo(x + w * 0.4, gy - 70, x + w, gy - 24);
     c.lineTo(x + w, gy); c.lineTo(x, gy);
     c.fill();
+    c.strokeStyle = 'rgba(190, 236, 150, 0.8)';
+    c.lineWidth = 2;
+    c.beginPath();
+    c.moveTo(x, gy - 29);
+    c.quadraticCurveTo(x + w * 0.4, gy - 69, x + w, gy - 23);
+    c.stroke();
     var gg = c.createLinearGradient(0, gy, 0, y + h);
-    gg.addColorStop(0, '#78bb51');
-    gg.addColorStop(1, '#5c9a3d');
+    gg.addColorStop(0, '#84ca4e');
+    gg.addColorStop(0.5, '#4c9a3c');
+    gg.addColorStop(1, '#286f36');
     c.fillStyle = gg;
     c.fillRect(x, gy, w, y + h - gy);
-    c.fillStyle = 'rgba(75, 132, 51, 0.55)';
+    c.fillStyle = 'rgba(40, 104, 44, 0.6)';
     c.fillRect(x, gy, w, 3);
+    c.fillStyle = 'rgba(214, 244, 130, 0.5)';
+    c.fillRect(x, gy + 3, w, 1.5);
+  }
+  /* Finish for a framed scene: the pane's own shade just inside the
+     frame, so the picture sits behind glass. Caller clips. */
+  function sceneFrameShade(c, x, y, w, h) {
+    var g = c.createLinearGradient(0, y, 0, y + 26);
+    g.addColorStop(0, 'rgba(20, 30, 80, 0.26)');
+    g.addColorStop(1, 'rgba(20, 30, 80, 0)');
+    c.fillStyle = g;
+    c.fillRect(x, y, w, 26);
+    g = c.createLinearGradient(x, 0, x + 18, 0);
+    g.addColorStop(0, 'rgba(20, 30, 80, 0.18)');
+    g.addColorStop(1, 'rgba(20, 30, 80, 0)');
+    c.fillStyle = g;
+    c.fillRect(x, y, 18, h);
   }
 
   /* Colour chip; the chosen one gets a thick ring and a tick. */
   function swatch(c, r, col, sel) {
     var hot = !sel && pointerOver(c, r.x, r.y, r.w, r.h);
     c.fillStyle = col;
-    E.roundRect(c, r.x, r.y, r.w, r.h, 8);
-    c.fill();
-    c.fillStyle = 'rgba(255, 255, 255, 0.25)';
+    tile(c, r.x, r.y, r.w, r.h, 8, sel ? 4 : (hot ? 3 : 1.8));
+    c.fillStyle = 'rgba(255, 255, 255, 0.28)';
     E.roundRect(c, r.x + 3, r.y + 3, r.w - 6, r.h * 0.36, 5);
     c.fill();
-    E.roundRect(c, r.x, r.y, r.w, r.h, 8);
-    E.ink(c, sel ? 4 : (hot ? 3 : 1.8));
     if (sel) {
       var cx = r.x + r.w - 6, cy = r.y + 6;
       E.fillEllipse(c, cx, cy, 9, 9, PAL.leaf);
@@ -568,6 +717,25 @@
       c.moveTo(cx - 4, cy); c.lineTo(cx - 1, cy + 3.5); c.lineTo(cx + 4.5, cy - 3.5);
       c.stroke();
     }
+  }
+
+  /* Screen heading over the meadow: ink letters on a cream keyline with
+     a soft drop shadow, so it stays readable on the deeper sky. */
+  function screenTitle(c, text, x, y) {
+    c.save();
+    c.textAlign = 'left';
+    c.textBaseline = 'middle';
+    c.lineJoin = 'round';
+    c.font = 'bold 22px ' + FONT;
+    c.strokeStyle = 'rgba(30, 24, 70, 0.2)';
+    c.lineWidth = 6;
+    c.strokeText(text, x, y + 2.5);
+    c.strokeStyle = '#fffaec';
+    c.lineWidth = 5;
+    c.strokeText(text, x, y);
+    c.fillStyle = PAL.ink;
+    c.fillText(text, x, y);
+    c.restore();
   }
 
   function sectionLabel(c, text, x, y) {
@@ -591,7 +759,7 @@
 
     /* The bare tree, waiting */
     var tx = R.x + 172;
-    E.softShadow(c, tx, gy + 4, 70, 6, 0.2);
+    E.softShadow(c, tx + 10, gy + 5, 84, 7, 0.36);
     c.save();
     c.translate(tx, gy + 4);
     c.scale(0.62, 0.62);
@@ -614,6 +782,7 @@
     c.scale(0.15, 0.15);
     Game.tree.drawTree(c, 0, 0, Game.BUILD_STAGES.length, Game.EXT_DEFAULT, t, false);
     c.restore();
+    sceneFrameShade(c, R.x, R.y, R.w, R.h);
     c.restore();
     E.roundRect(c, R.x, R.y, R.w, R.h, 12);
     E.ink(c, 2);
@@ -694,16 +863,13 @@
     var roster = designRoster();
 
     /* The same meadow as the title so the menus read as one place. */
-    E.drawMeadowSky(c, 640, t, TITLE_GROUND, Game.MEADOW.width, 724);
+    E.drawMeadowSky(c, 640, t, TITLE_GROUND, Game.MEADOW.width, null);   /* no sun: it would sit behind the tabs */
     drawTitleGround(c);
+    lightBackdrop(c);
     clipGame(c);
 
     /* Header */
-    c.fillStyle = PAL.ink;
-    c.textAlign = 'left';
-    c.textBaseline = 'middle';
-    c.font = 'bold 22px "M PLUS Rounded 1c", sans-serif';
-    c.fillText(T('customTitle'), 22, 30);
+    screenTitle(c, T('customTitle'), 22, 30);
 
     /* Preview: a big Momoko on a little grassy stage, turning to show
        both sides, with a few flowers and a butterfly for company. */
@@ -730,13 +896,14 @@
     spot.addColorStop(1, 'rgba(255, 250, 220, 0)');
     c.fillStyle = spot;
     c.fillRect(PX, PY, PW, PH);
-    E.softShadow(c, pcx, pcy, 54, 10, 0.26);
+    E.softShadow(c, pcx + 4, pcy, 56, 10, 0.4);
     /* walk for a while facing right, then turn and walk facing left */
     var cycle = Math.floor(t / 150) % 2;
     var walkFrame = Math.floor(t / 9) % 4 + 1;
     E.drawCharacter(c, pcx, pcy, cust, walkFrame, cycle ? -1 : 1, 2.75, (t % 190) < 8);
     var bk = t / 160;
     E.drawButterfly(c, PX + PW - 60 + Math.sin(bk) * 30, PY + 70 + Math.sin(bk * 2.3) * 18, t, bk, PAL.peach);
+    sceneFrameShade(c, PX, PY, PW, PH);
     c.restore();
     /* name ribbon across the top of the preview */
     c.font = 'bold 14px ' + FONT;
@@ -761,10 +928,8 @@
       var r = cellRect(v);
       var vid = tab.variants[v];
       var sel = tab.field && cust[tab.field] === vid;
-      c.fillStyle = tileFill(c, r, sel, PAL.cream, 'rgba(255,244,220,0.9)');
-      E.roundRect(c, r.x, r.y, r.w, r.h, 8);
-      c.fill();
-      E.ink(c, sel ? 3 : 1.8);
+      c.fillStyle = tileFill(c, r, sel, '#fffaf0', 'rgba(255,244,220,0.94)');
+      tile(c, r.x, r.y, r.w, r.h, 8, sel ? 3 : 1.8);
       drawVariantIcon(c, tab.id, vid, r.x + 40, r.y + r.h / 2, cust);
       c.fillStyle = PAL.ink;
       fitFont(c, T(tab.labelPrefix + vid), r.w - 80, 12, 'bold');
@@ -795,12 +960,13 @@
           E.roundRect(c, pr.x - 4, pr.y - 4, pr.w + 8, pr.h + 8, 12);
           c.fill();
         }
+        E.softShadow(c, pr.x + pr.w / 2, pr.y + pr.h + 1, pr.w * 0.5, 4, 0.3);
         E.drawPortrait(c, pr.x + pr.w / 2, pr.y + pr.h / 2, pr.w, pcust);
       }
     }
 
     button(c, CUST.done, T(Game.flags.introSeen ? 'customDone' : 'customStart'),
-      { fill: PAL.leafLight, font: 17 });
+      { fill: PAL.leafLight, font: 17, shine: true });
   }
 
   function nameKeyFor(id) {
@@ -1068,30 +1234,50 @@
     t++;
     /* Timber walls run out across the bezel on tablets; the shelves and
        buttons stay in the viewport. */
-    var g = c.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, '#6b4a2f');
-    g.addColorStop(0.35, '#c9a86a');
-    g.addColorStop(1, '#8a6340');
-    c.fillStyle = g;
-    c.fillRect(VIEW.x, VIEW.y, VIEW.w, VIEW.h);
-
-    /* Banner, running the full width of the screen on tablets and up
-       into the bezel above, so the shop reads as one big room. */
-    var bg = c.createLinearGradient(0, 0, 0, 60);
-    bg.addColorStop(0, '#4a3520');
-    bg.addColorStop(1, '#33240f');
-    c.fillStyle = bg;
-    c.fillRect(VIEW.x, VIEW.y, VIEW.w, 60 - VIEW.y);
+    var vx = VIEW.x, vy = VIEW.y, vw = VIEW.w, vh = VIEW.h;
+    var back = E.getBaked('shopBack', '', vx, vy, vw, vh, 0.5, function (g) {
+      var wg = g.createLinearGradient(0, 0, 0, H);
+      wg.addColorStop(0, '#5a3a26');
+      wg.addColorStop(0.3, '#d0a868');
+      wg.addColorStop(0.72, '#b98a52');
+      wg.addColorStop(1, '#6e4a30');
+      g.fillStyle = wg;
+      g.fillRect(vx, vy, vw, vh);
+      /* Banner, running the full width of the screen on tablets and up
+         into the bezel above, so the shop reads as one big room. */
+      var bg = g.createLinearGradient(0, 0, 0, 60);
+      bg.addColorStop(0, '#4a3520');
+      bg.addColorStop(1, '#33240f');
+      g.fillStyle = bg;
+      g.fillRect(vx, vy, vw, 60 - vy);
+      /* Hanging lamps pool warm light on the wall; the banner shades the
+         top of it; then the shared grade and vignette. */
+      var bs = g.createLinearGradient(0, 60, 0, 96);
+      bs.addColorStop(0, 'rgba(40, 20, 60, 0.4)');
+      bs.addColorStop(1, 'rgba(40, 20, 60, 0)');
+      g.fillStyle = bs;
+      g.fillRect(vx, 60, vw, 36);
+      for (var lx = Math.ceil((vx - 140) / 260) * 260 + 140; lx < vx + vw; lx += 260) {
+        E.glow(g, lx, 150, 190, '255, 214, 140', 0.34);
+      }
+      E.postFX(g, vx, vy, vw, vh);
+    });
+    c.drawImage(back, vx, vy, vw, vh);
     c.fillStyle = 'rgba(255, 210, 74, 0.35)';
-    c.fillRect(VIEW.x, 58, VIEW.w, 2);
+    c.fillRect(vx, 58, vw, 2);
 
     drawShopWall(c);
     drawShopFloor(c);
     clipGame(c);
-    c.fillStyle = PAL.sun;
     c.font = 'bold 22px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'left';
     c.textBaseline = 'middle';
+    c.fillStyle = 'rgba(20, 10, 30, 0.5)';
+    c.fillText(T('shopTitle'), 20, 32.5);
+    var tg = c.createLinearGradient(0, 18, 0, 42);
+    tg.addColorStop(0, '#ffe98a');
+    tg.addColorStop(1, '#f7b53a');
+    c.fillStyle = tg;
     c.fillText(T('shopTitle'), 20, 30);
     button(c, SHOP.exit, T('shopExit'), { font: 13 });
 
@@ -1137,10 +1323,17 @@
   function drawShopWall(c) {
     var spr = E.getCachedSprite('shopWall', W, 290, function (g) {
       var rnd = E.seeded(55);
-      g.strokeStyle = 'rgba(74, 51, 32, 0.16)';
-      g.lineWidth = 2;
+      /* boards: each a slightly different tone, a dark seam with a lit
+         edge beside it */
       for (var x = 0; x < W; x += 64) {
+        g.fillStyle = (x / 64) % 2 ? 'rgba(255, 236, 190, 0.07)' : 'rgba(74, 40, 30, 0.07)';
+        g.fillRect(x, 0, 64, 290);
+        g.strokeStyle = 'rgba(74, 40, 30, 0.34)';
+        g.lineWidth = 2;
         g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 290); g.stroke();
+        g.strokeStyle = 'rgba(255, 240, 200, 0.22)';
+        g.lineWidth = 1.2;
+        g.beginPath(); g.moveTo(x + 2, 0); g.lineTo(x + 2, 290); g.stroke();
       }
       for (var k = 0; k < 14; k++) {
         var kx = rnd() * W, ky = 20 + rnd() * 250;
@@ -1166,8 +1359,11 @@
     var sx0 = Math.min(6, vx0 + 6), sw0 = Math.max(W - 12, vx1 - vx0 - 12);
     for (var r = 0; r < rows.length; r++) {
       var y = rows[r] - 3;
-      c.fillStyle = 'rgba(36, 23, 8, 0.25)';
-      c.fillRect(sx0, y + 6, sw0, 4);
+      var ss = c.createLinearGradient(0, y + 6, 0, y + 22);
+      ss.addColorStop(0, 'rgba(40, 20, 60, 0.4)');
+      ss.addColorStop(1, 'rgba(40, 20, 60, 0)');
+      c.fillStyle = ss;
+      c.fillRect(sx0, y + 6, sw0, 16);
       E.fillRound(c, sx0, y, sw0, 7, 2, '#8a6340');
       c.fillStyle = 'rgba(255, 230, 180, 0.3)';
       c.fillRect(sx0 + 2, y + 1, sw0 - 4, 2);
@@ -1226,7 +1422,11 @@
     var y1 = VIEW.y + VIEW.h;
     if (y1 <= fy) return;
     var vx0 = VIEW.x, vx1 = VIEW.x + VIEW.w;
-    c.fillStyle = '#7a5834';
+    var fg = c.createLinearGradient(0, fy, 0, Math.max(y1, fy + 140));
+    fg.addColorStop(0, '#5f3f2a');
+    fg.addColorStop(0.2, '#8a6038');
+    fg.addColorStop(1, '#5a3a28');
+    c.fillStyle = fg;
     c.fillRect(vx0, fy, vx1 - vx0, y1 - fy);
     c.save();
     c.globalAlpha = 0.35;
@@ -1253,10 +1453,8 @@
 
       var cellHot = !owned && pointerOver(c, cell.x + 4, cell.y + 4, cell.w - 8, cell.h - 8);
       c.fillStyle = owned ? 'rgba(180,170,150,0.75)'
-        : (flashing ? PAL.sun : (cellHot ? PAL.cream : 'rgba(255, 244, 220, 0.92)'));
-      E.roundRect(c, cell.x + 4, cell.y + 4, cell.w - 8, cell.h - 8, 8);
-      c.fill();
-      E.ink(c, flashing || cellHot ? 3 : 1.8);
+        : (flashing ? PAL.sun : (cellHot ? '#fffaf0' : 'rgba(255, 244, 220, 0.95)'));
+      tile(c, cell.x + 4, cell.y + 4, cell.w - 8, cell.h - 8, 8, flashing || cellHot ? 3 : 1.8);
 
       if (cell.kind === 'material') {
         E.drawMaterialIcon(c, cell.type, cell.x + cell.w / 2, cell.y + cell.h / 2 - 8, 46);
@@ -1884,15 +2082,12 @@
 
     /* The same meadow as the character designer, out across the bezel
        on tablets; the controls stay in the viewport. */
-    E.drawMeadowSky(c, 640, t, TITLE_GROUND, Game.MEADOW.width, 724);
+    E.drawMeadowSky(c, 640, t, TITLE_GROUND, Game.MEADOW.width, null);   /* no sun: it would sit behind the tabs */
     drawTitleGround(c);
+    lightBackdrop(c);
     clipGame(c);
 
-    c.fillStyle = PAL.ink;
-    c.font = 'bold 22px "M PLUS Rounded 1c", sans-serif';
-    c.textAlign = 'left';
-    c.textBaseline = 'middle';
-    c.fillText(T('extTitle'), 20, 28);
+    screenTitle(c, T('extTitle'), 20, 28);
 
     /* Live preview */
     c.fillStyle = 'rgba(36, 23, 8, 0.16)';
@@ -1905,9 +2100,10 @@
     c.clip();
     sceneBackdrop(c, EXT.previewX, EXT.previewY, EXT.previewW, EXT.previewH,
       EXT.previewY + EXT.previewH - 48);
-    E.softShadow(c, EXT.previewX + EXT.previewW / 2, EXT.previewY + EXT.previewH - 38, 100, 8, 0.2);
+    E.softShadow(c, EXT.previewX + EXT.previewW / 2 + 12, EXT.previewY + EXT.previewH - 38, 116, 9, 0.38);
     Game.tree.drawTreePreview(c, EXT.previewX + EXT.previewW / 2,
       EXT.previewY + EXT.previewH - 40, 0.72, Game.BUILD_STAGES.length, ext, t);
+    sceneFrameShade(c, EXT.previewX, EXT.previewY, EXT.previewW, EXT.previewH);
     c.restore();
 
     /* Tabs */
@@ -1921,10 +2117,8 @@
         var dr = extCellRect(d);
         var on = !!ext.decor[tab.toggles[d]];
         /* Selected = sun yellow, same as every other tile in the game. */
-        c.fillStyle = tileFill(c, dr, on, PAL.cream, 'rgba(255,244,220,0.9)');
-        E.roundRect(c, dr.x, dr.y, dr.w, dr.h, 8);
-        c.fill();
-        E.ink(c, on ? 3 : 1.8);
+        c.fillStyle = tileFill(c, dr, on, '#fffaf0', 'rgba(255,244,220,0.94)');
+        tile(c, dr.x, dr.y, dr.w, dr.h, 8, on ? 3 : 1.8);
         /* checkbox */
         c.fillStyle = on ? PAL.leaf : 'rgba(74,51,32,0.15)';
         E.roundRect(c, dr.x + 12, dr.y + dr.h / 2 - 11, 22, 22, 5);
@@ -1949,10 +2143,8 @@
       for (var v = 0; v < tab.variants.length; v++) {
         var r = extCellRect(v);
         var sel = ext[tab.field] === tab.variants[v];
-        c.fillStyle = tileFill(c, r, sel, PAL.cream, 'rgba(255,244,220,0.9)');
-        E.roundRect(c, r.x, r.y, r.w, r.h, 8);
-        c.fill();
-        E.ink(c, sel ? 3 : 1.8);
+        c.fillStyle = tileFill(c, r, sel, '#fffaf0', 'rgba(255,244,220,0.94)');
+        tile(c, r.x, r.y, r.w, r.h, 8, sel ? 3 : 1.8);
         drawExtIcon(c, tab.id, tab.variants[v], r.x + 34, r.y + r.h / 2, ext);
         c.fillStyle = PAL.ink;
         fitFont(c, T(tab.labelPrefix + tab.variants[v]), r.w - 76, 13, 'bold');
@@ -2262,13 +2454,7 @@
     easel: 28, discoBall: 0, piano: 60,
   };
 
-  /* ---- draw ---- */
-  function drawHouseInterior(c) {
-    t++;
-    var rd = roomDef(Game.currentRoom);
-    var items = Game.rooms[Game.currentRoom] || [];
-    var p = ensureRoomPlayer();
-
+  function paintRoomShell(c, rd) {
     /* Back wall: plank lines, darker toward the corners */
     var g = c.createLinearGradient(0, ROOM.wallTop, 0, ROOM.floorY);
     g.addColorStop(0, rd.wallA);
@@ -2285,12 +2471,22 @@
     c.restore();
     drawWallpaper(c, rd);
     var cg = c.createLinearGradient(0, 0, W, 0);
-    cg.addColorStop(0, 'rgba(74, 51, 32, 0.16)');
-    cg.addColorStop(0.18, 'rgba(74, 51, 32, 0)');
-    cg.addColorStop(0.82, 'rgba(74, 51, 32, 0)');
-    cg.addColorStop(1, 'rgba(74, 51, 32, 0.16)');
+    cg.addColorStop(0, 'rgba(50, 30, 80, 0.32)');
+    cg.addColorStop(0.2, 'rgba(50, 30, 80, 0)');
+    cg.addColorStop(0.8, 'rgba(50, 30, 80, 0)');
+    cg.addColorStop(1, 'rgba(50, 30, 80, 0.32)');
     c.fillStyle = cg;
     c.fillRect(0, ROOM.wallTop, W, ROOM.floorY - ROOM.wallTop);
+    /* the ceiling's shade creeping down the wall, and daylight blooming
+       in around each window */
+    var ag = c.createLinearGradient(0, ROOM.wallTop, 0, ROOM.wallTop + 60);
+    ag.addColorStop(0, 'rgba(50, 30, 80, 0.3)');
+    ag.addColorStop(1, 'rgba(50, 30, 80, 0)');
+    c.fillStyle = ag;
+    c.fillRect(0, ROOM.wallTop, W, 60);
+    for (var gw = 0; gw < ROOM.windows.length; gw++) {
+      E.glow(c, ROOM.windows[gw], ROOM.wallTop + 60, 130, '255, 236, 180', 0.2);
+    }
 
     for (var wi = 0; wi < ROOM.windows.length; wi++) {
       drawInteriorWindow(c, ROOM.windows[wi], ROOM.wallTop + 22, rd);
@@ -2308,9 +2504,10 @@
     c.fillStyle = rd.floor;
     c.fillRect(0, ROOM.floorY, W, H - ROOM.floorY);
     var fg = c.createLinearGradient(0, ROOM.floorY, 0, H);
-    fg.addColorStop(0, 'rgba(36, 23, 8, 0.22)');
-    fg.addColorStop(0.35, 'rgba(36, 23, 8, 0)');
-    fg.addColorStop(1, 'rgba(255, 244, 220, 0.08)');
+    fg.addColorStop(0, 'rgba(40, 20, 70, 0.42)');
+    fg.addColorStop(0.3, 'rgba(40, 20, 70, 0.08)');
+    fg.addColorStop(0.6, 'rgba(255, 236, 190, 0.1)');
+    fg.addColorStop(1, 'rgba(40, 20, 70, 0.16)');
     c.fillStyle = fg;
     c.fillRect(0, ROOM.floorY, W, H - ROOM.floorY);
     c.save();
@@ -2327,26 +2524,46 @@
     for (var d = 0; d < 6; d++) {
       var yy = ROOM.floorY + Math.pow(d / 5, 1.7) * (H - ROOM.floorY);
       c.beginPath(); c.moveTo(0, yy); c.lineTo(W, yy); c.stroke();
+      /* a lit lip under each board end, so the planks have thickness */
+      c.strokeStyle = 'rgba(255, 232, 190, 0.5)';
+      c.beginPath(); c.moveTo(0, yy + 2); c.lineTo(W, yy + 2); c.stroke();
+      c.strokeStyle = E.shade(rd.floor, -26);
     }
     c.restore();
-    /* Sunlight from the two windows lying across the floorboards */
-    c.save();
-    c.globalCompositeOperation = 'lighter';
-    for (var lw = 0; lw < ROOM.windows.length; lw++) {
-      var wx = ROOM.windows[lw];
-      var lg = c.createLinearGradient(0, ROOM.floorY, 0, ROOM.floorY + 150);
-      lg.addColorStop(0, 'rgba(255, 230, 160, 0.16)');
-      lg.addColorStop(1, 'rgba(255, 230, 160, 0)');
-      c.fillStyle = lg;
-      c.beginPath();
-      c.moveTo(wx - 50, ROOM.floorY);
-      c.lineTo(wx + 50, ROOM.floorY);
-      c.lineTo(wx + 130, ROOM.floorY + 150);
-      c.lineTo(wx - 10, ROOM.floorY + 150);
-      c.closePath();
-      c.fill();
+    /* Sunlight from the two windows: a shaft hanging in the air in front
+       of the wall and a pool lying across the floorboards. Painted into a
+       tiny canvas and stretched, so the light has soft edges instead of
+       reading as translucent polygons. */
+    if (E.fxOn('shafts')) {
+      var light = E.getSoftSprite('roomLight', W, H, 0.05, function (g) {
+        for (var lw = 0; lw < ROOM.windows.length; lw++) {
+          var wx = ROOM.windows[lw], sy0 = ROOM.wallTop + 40;
+          var ag = g.createLinearGradient(wx, sy0, wx + 60, ROOM.floorY);
+          ag.addColorStop(0, 'rgba(255, 232, 170, 0.5)');
+          ag.addColorStop(1, 'rgba(255, 232, 170, 0.16)');
+          g.fillStyle = ag;
+          g.beginPath();
+          g.moveTo(wx - 40, sy0); g.lineTo(wx + 40, sy0);
+          g.lineTo(wx + 78, ROOM.floorY); g.lineTo(wx - 24, ROOM.floorY);
+          g.closePath();
+          g.fill();
+          var lg = g.createLinearGradient(0, ROOM.floorY, 0, ROOM.floorY + 170);
+          lg.addColorStop(0, 'rgba(255, 226, 150, 1)');
+          lg.addColorStop(1, 'rgba(255, 226, 150, 0)');
+          g.fillStyle = lg;
+          g.beginPath();
+          g.moveTo(wx - 30, ROOM.floorY); g.lineTo(wx + 74, ROOM.floorY);
+          g.lineTo(wx + 150, ROOM.floorY + 170); g.lineTo(wx + 10, ROOM.floorY + 170);
+          g.closePath();
+          g.fill();
+        }
+      });
+      c.save();
+      c.globalCompositeOperation = 'lighter';
+      c.globalAlpha = 0.3;
+      c.drawImage(light, 0, 0, W, H);
+      c.restore();
     }
-    c.restore();
 
     /* Skirting board with a lit top edge and a contact shadow on the floor */
     c.fillStyle = PAL.bark;
@@ -2357,6 +2574,20 @@
     c.fillRect(0, ROOM.floorY, W, 4);
 
     drawRoomDoor(c);
+    E.postFX(c, 0, 0, W, H);
+  }
+
+  /* ---- draw ---- */
+  function drawHouseInterior(c) {
+    t++;
+    var rd = roomDef(Game.currentRoom);
+    var items = Game.rooms[Game.currentRoom] || [];
+    var p = ensureRoomPlayer();
+
+    /* The empty room -- walls, windows, floor, door, and the light, grade
+       and vignette over them -- is painted once per room and blitted. */
+    var shell = E.getBaked('room', rd.id, 0, 0, W, H, 0, function (g) { paintRoomShell(g, rd); });
+    c.drawImage(shell, 0, 0, W, H);
 
     /* Depth-sorted: furniture, Momoko and the resident friend all mingle. */
     var layer = [];
@@ -2395,6 +2626,9 @@
     } else if (near === 'exit') {
       drawPrompt(c, ROOM.door.x - 30, ROOM.door.y - 118, T('furnitureExit'));
     }
+
+    /* dust drifting in the window light */
+    E.drawMotes(c, 0, t, 0, W);
 
     drawPalette(c);
     drawRoomTabs(c);
@@ -2486,11 +2720,14 @@
     c.fill();
     c.restore();
     /* frame, then the door itself */
+    E.setAutoShade(true);
     E.fillRound(c, d.x - 40, d.y - 110, 80, 112, 7, PAL.bark);
     E.fillRound(c, d.x - 34, d.y - 104, 68, 104, 6, '#a9773f');
     E.fillRound(c, d.x - 26, d.y - 94, 52, 34, 4, '#c69a5e');
     E.fillRound(c, d.x - 26, d.y - 52, 52, 40, 4, '#c69a5e');
     E.fillEllipse(c, d.x + 20, d.y - 56, 4, 4, PAL.sun);
+    E.setAutoShade(false);
+    E.glow(c, d.x, d.y + 4, 70, '255, 226, 140', 0.5);
     c.fillStyle = 'rgba(255, 236, 170, 0.9)';
     c.fillRect(d.x - 32, d.y - 3, 64, 3);
   }
@@ -2503,16 +2740,22 @@
     c.save();
     c.beginPath(); E.roundRect(c, x + 7, cy + 7, ww - 14, wh - 14, 3); c.clip();
     var sky = c.createLinearGradient(0, cy, 0, cy + wh);
-    sky.addColorStop(0, '#9cd4ea');
-    sky.addColorStop(1, '#e4f3dc');
+    sky.addColorStop(0, '#4fa9e3');
+    sky.addColorStop(0.6, '#a6dcf2');
+    sky.addColorStop(1, '#fdf0c2');
     c.fillStyle = sky;
     c.fillRect(x, cy, ww, wh);
     E.fillEllipse(c, cx + 26, cy + 22, 12, 7, '#ffffff', false);
-    E.fillEllipse(c, cx - 24, cy + wh + 2, 46, 26, '#a3cd90', false);
+    E.fillEllipse(c, cx + 28, cy + 25, 10, 4, '#cfe0f4', false);
+    E.fillEllipse(c, cx - 24, cy + wh + 2, 46, 26, '#63b46a', false);
     E.fillEllipse(c, cx + 30, cy + wh + 6, 44, 28, PAL.leafLight, false);
     E.fillEllipse(c, cx - 2, cy + 34, 16, 14, PAL.leaf, false);
     c.fillStyle = PAL.bark;
     c.fillRect(cx - 3, cy + 42, 6, 20);
+    /* the frame shades the top and left of the view */
+    c.fillStyle = 'rgba(20, 30, 80, 0.22)';
+    c.fillRect(x + 7, cy + 7, ww - 14, 5);
+    c.fillRect(x + 7, cy + 7, 4, wh - 14);
     c.restore();
     /* glazing bars */
     c.strokeStyle = PAL.cream;
@@ -2578,9 +2821,13 @@
       var itemHot = !sel && pointerOver(c, ir.x, ir.y, ir.w, ir.h);
       c.fillStyle = sel ? PAL.sun : (owned ? (itemHot ? '#fffaf0' : 'rgba(255,244,220,0.95)')
                                            : (itemHot ? 'rgba(255,244,220,0.42)' : 'rgba(255,244,220,0.28)'));
-      E.roundRect(c, ir.x, ir.y, ir.w, ir.h, 8);
-      c.fill();
-      E.ink(c, sel ? 3.5 : (itemHot ? 2.6 : 1.6));
+      if (owned || sel) {
+        tile(c, ir.x, ir.y, ir.w, ir.h, 8, sel ? 3.5 : (itemHot ? 2.6 : 1.6));
+      } else {
+        E.roundRect(c, ir.x, ir.y, ir.w, ir.h, 8);
+        c.fill();
+        E.ink(c, itemHot ? 2.6 : 1.6);
+      }
 
       /* Shop-sized icon, shrunk a touch so the tallest piece clears the badge */
       c.save();
@@ -2762,6 +3009,11 @@
   }
 
   function drawFurniture(c, type, x, y, mode, flip) {
+    E.setAutoShade(true);
+    drawFurnitureBody(c, type, x, y, mode, flip);
+    E.setAutoShade(false);
+  }
+  function drawFurnitureBody(c, type, x, y, mode, flip) {
     var s = mode === 'palette' ? 0.52 : 1;
     var absY = y;               /* pre-translate, so hanging pieces can reach the ceiling */
     c.save();
@@ -2894,32 +3146,56 @@
         E.fillRound(c, -10, -6, 20, 6, 3, woodD);
         E.fillRound(c, -3, -52, 6, 48, 2, wood);
         E.fillPath(c, [[-22, -52], [22, -52], [16, -78], [-16, -78]], PAL.sun);
-        c.save(); c.globalAlpha = 0.28;
-        E.fillEllipse(c, 0, -44, 30, 26, PAL.sun, false);
-        c.restore();
+        if (E.fxOn('glow')) {
+          E.glow(c, 0, -56, 74, '255, 222, 130', 0.6);
+          /* the pool of light it throws on the floor */
+          c.save(); c.scale(1, 0.3);
+          E.glow(c, 0, -6, 58, '255, 222, 130', 0.34);
+          c.restore();
+        } else {
+          c.save(); c.globalAlpha = 0.28;
+          E.fillEllipse(c, 0, -44, 30, 26, PAL.sun, false);
+          c.restore();
+        }
         break;
       case 'lantern':
         E.fillRound(c, -12, -58, 24, 8, 3, wood);
         E.fillRound(c, -10, -50, 20, 26, 5, PAL.sun);
         E.fillRound(c, -12, -26, 24, 7, 3, wood);
         E.fillRound(c, -3, -19, 6, 19, 2, woodD);
-        c.save(); c.globalAlpha = 0.3;
-        E.fillEllipse(c, 0, -37, 26, 24, PAL.sun, false);
-        c.restore();
+        if (E.fxOn('glow')) {
+          E.glow(c, 0, -37, 58, '255, 214, 110', 0.7);
+          E.fillEllipse(c, 0, -37, 3, 6, '#fffbe0', false);
+        } else {
+          c.save(); c.globalAlpha = 0.3;
+          E.fillEllipse(c, 0, -37, 26, 24, PAL.sun, false);
+          c.restore();
+        }
         break;
       case 'candle':
         E.fillRound(c, -18, -10, 36, 10, 4, '#c9a86a');
         for (var cd = -1; cd <= 1; cd++) {
           E.fillRound(c, cd * 11 - 4, -32 + Math.abs(cd) * 6, 8, 24, 3, PAL.cream);
           E.fillEllipse(c, cd * 11, -36 + Math.abs(cd) * 6, 3.4, 5.5, PAL.sun, false);
+          E.fillEllipse(c, cd * 11, -35 + Math.abs(cd) * 6, 1.5, 2.8, '#fffbe0', false);
         }
+        E.glow(c, 0, -34, 46, '255, 210, 120', 0.5 + Math.sin(t / 7) * 0.06);
         break;
       case 'fireplace':
         E.fillRound(c, -34, -66, 68, 66, 6, '#8f8b85');
         E.fillRound(c, -22, -44, 44, 44, 5, '#3b2a16');
-        E.fillEllipse(c, 0, -14, 16, 12, '#e8734a', false);
-        E.fillEllipse(c, 0, -18, 9, 9, PAL.sun, false);
+        /* flames that lick and flicker */
+        var fl = Math.sin(t / 6) * 1.5, fl2 = Math.sin(t / 4.3 + 1) * 1.2;
+        E.fillPath(c, [[-15, -4], [-13, -18 + fl2], [-7, -12], [-2, -28 + fl], [4, -14], [10, -22 - fl2], [15, -4]], '#e8734a', true, false);
+        E.fillPath(c, [[-8, -4], [-5, -14 - fl2], [0, -20 + fl], [5, -13], [8, -4]], PAL.sun, true, false);
+        E.fillEllipse(c, 0, -7, 4, 3.5, '#fffbe0', false);
         E.fillRound(c, -40, -76, 80, 12, 4, wood);
+        if (E.fxOn('glow')) {
+          E.glow(c, 0, -16, 84, '255, 170, 90', 0.5 + fl * 0.03);
+          c.save(); c.scale(1, 0.3);
+          E.glow(c, 0, 26, 86, '255, 180, 100', 0.4);
+          c.restore();
+        }
         break;
       case 'rug':
         c.save();
@@ -3029,6 +3305,8 @@
         c.restore();
         E.fillEllipse(c, 0, 0, 24, 24, 'rgba(0,0,0,0)');
         /* sparkles thrown off the ball */
+        E.fillEllipse(c, -8, -9, 7, 5, 'rgba(255,255,255,0.55)', false);
+        E.glow(c, 0, 0, 62, '214, 232, 255', 0.42);
         c.save();
         c.globalAlpha = 0.55 + Math.sin(t / 9) * 0.25;
         c.fillStyle = PAL.cream;
@@ -3134,15 +3412,16 @@
     E.drawMeadowSky(c, 1500, t, V.groundY, Game.MEADOW.width);
     /* late-afternoon warmth over the sky */
     var wg = c.createLinearGradient(0, VIEW.y, 0, V.groundY);
-    wg.addColorStop(0, 'rgba(255, 214, 150, 0.32)');
+    wg.addColorStop(0, 'rgba(255, 200, 150, 0.12)');
     wg.addColorStop(1, 'rgba(255, 214, 150, 0)');
     c.fillStyle = wg;
     c.fillRect(VIEW.x, VIEW.y, VIEW.w, V.groundY - VIEW.y);
     drawTitleGround(c, V.groundY);
+    lightBackdrop(c);
     clipGame(c);
 
     var TR = V.tree;
-    E.softShadow(c, TR.x, TR.groundY + 2, 130, 9, 0.22);
+    E.softShadow(c, TR.x + 14, TR.groundY + 3, 150, 10, 0.38);
     c.save();
     c.translate(TR.x, TR.groundY);
     c.scale(TR.scale, TR.scale);
@@ -3216,7 +3495,7 @@
     var ty = V.textTop + (V.textBottom - V.textTop - lines.length * lh) / 2 + lh / 2;
     for (var li = 0; li < lines.length; li++) c.fillText(lines[li], cxP, ty + li * lh);
 
-    button(c, VICTORY_BTN, T('victoryAgain'), { fill: PAL.sun, font: 15 });
+    button(c, VICTORY_BTN, T('victoryAgain'), { fill: PAL.sun, font: 15, shine: true });
   }
 
   function handleVictoryClick(mx, my) {
@@ -3233,7 +3512,7 @@
     var sample = Game.i18n.allText();
     ['400', '700'].forEach(function (wgt) {
       document.fonts.load(wgt + ' 16px "M PLUS Rounded 1c"', sample)
-        .then(function () { E.clearSpriteCache(); })
+        .then(function () { E.clearSpriteCache(); Game.tree.clearCache(); })
         .catch(function () {});
     });
   }
