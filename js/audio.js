@@ -277,6 +277,30 @@
     o.stop(t + dur);
   }
 
+  /* Turbo kicking in: a soft breath of wind, rising and falling. */
+  function whoosh() {
+    if (!ctx) return;
+    var t = ctx.currentTime, dur = 0.55;
+    var n = Math.floor(ctx.sampleRate * dur);
+    var buf = ctx.createBuffer(1, n, ctx.sampleRate), d = buf.getChannelData(0);
+    for (var i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    var src = ctx.createBufferSource();
+    src.buffer = buf;
+    var bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 1.2;
+    bp.frequency.setValueAtTime(500, t);
+    bp.frequency.exponentialRampToValueAtTime(1600, t + dur * 0.5);
+    bp.frequency.exponentialRampToValueAtTime(700, t + dur);
+    var g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.07, t + dur * 0.35);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(bp); bp.connect(g); g.connect(sfxGain);
+    src.start(t);
+    src.stop(t + dur);
+  }
+
   /* ---- Music ----
      Songs live in songs.js; music.js streams them with a look-ahead
      scheduler and crossfades when the type changes. */
@@ -324,6 +348,7 @@
         case 'sparkle': sparkle(); break;
         case 'zip': zipWhirr(2.6); break;
         case 'zipCall': zipWhirr(1.4); break;
+        case 'whoosh': whoosh(); break;
       }
     },
     startVoice: function (freq, velocity) {

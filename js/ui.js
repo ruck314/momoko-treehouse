@@ -2387,13 +2387,11 @@
     clampPlaced(Game.rooms[Game.currentRoom] || []);
     var p = ensureRoomPlayer();
     var f = ROOM.floor;
-    var moving = false;
     var SP = 3.2;
-
-    if (keys.left && !keys.right) { p.x -= SP; p.facing = -1; moving = true; }
-    else if (keys.right && !keys.left) { p.x += SP; p.facing = 1; moving = true; }
-    if (keys.up && !keys.down) { p.y -= SP * 0.72; moving = true; }
-    else if (keys.down && !keys.up) { p.y += SP * 0.72; moving = true; }
+    var dx = keys.left && !keys.right ? -1 : keys.right && !keys.left ? 1 : 0;
+    var dy = keys.up && !keys.down ? -1 : keys.down && !keys.up ? 1 : 0;
+    if (dx) p.facing = dx;
+    var moving = p.drive(dx, dy, SP, 0.72);
 
     if (p.x < f.left) p.x = f.left;
     if (p.x > f.right) p.x = f.right;

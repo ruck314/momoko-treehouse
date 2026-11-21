@@ -1945,7 +1945,7 @@
     return { face: 1, turnSx: 1, sq: 0, lift: 0, bobY: 0, hipX: 0, lean: 0, phase: 0, amp: 0, stance: 0.5,
              breath: 0, eyes: 'o', mouth: 0, sway: 0, sway2: 0, skirt: 0, cape: 0, charm: 0,
              bounce: 0, carry: 0, tilt: 0, t: 0, fidget: 0, run: 0, front: false,
-             hang: 0, legSw: 0, air: false };
+             hang: 0, legSw: 0, air: false, sprint: 0 };
   }
   /* Menus without a rig: an idle or a walk from the clock. */
   function stillPose(frame, facing, blink, lift, tm, x) {
@@ -1999,7 +1999,8 @@
   var STRIDE = 5.0;      /* half the planted foot's sweep, local units */
   function footAt(P, p, base) {
     p = ((p % 1) + 1) % 1;
-    var S = STRIDE * P.amp, H = (2.5 + 2.0 * P.run) * P.amp, B = P.stance || 0.5;
+    var sp = P.sprint || 0;
+    var S = STRIDE * P.amp * (1 + 0.12 * sp), H = (2.5 + 2.0 * P.run + 1.2 * sp) * P.amp, B = P.stance || 0.5;
     var x, y = 0, pitch = 0;
     if (p < B) {
       x = S * (1 - 2 * p / B);
@@ -2075,9 +2076,9 @@
     for (var ai = 0; ai < 2; ai++) {
       var s = ai === 0 ? -1 : 1;
       var rest = -s * 0.13 + breath * 0.012 * -s;
-      var swing = Math.cos(TAU * (phases[ai] - 0.04)) * P.amp * (0.5 + 0.22 * P.run);
+      var swing = Math.cos(TAU * (phases[ai] - 0.04)) * P.amp * (0.5 + 0.22 * P.run) * (1 + 0.3 * (P.sprint || 0));
       var ua = rest + swing;
-      var fa = -0.22 - 0.3 * P.run * P.amp - Math.max(0, -swing) * 0.45;
+      var fa = -0.22 - (0.3 * P.run + 0.3 * (P.sprint || 0)) * P.amp - Math.max(0, -swing) * 0.45;
       if (P.fidget) { ua += s * 0.1 * P.fidget; fa -= 0.4 * P.fidget; }
       /* cheering: hands up beside her head, elbows out */
       var cua = s > 0 ? -2.35 : 2.35, cfa = s > 0 ? -0.5 : 0.5;
@@ -2323,6 +2324,9 @@
     this.fidgetAge = 9;
     this.puffs = [];
     this.wantCarry = false;
+    this.turbo = 0;                       /* set by Player.drive each tick */
+    this.tb = 0;                          /* eased turbo, for the look */
+    this.sprint = 0;                      /* eased: 0 at a walk .. 1 at twice it */
   }
   Rig.prototype.puff = function (x, y, dir, n) {
     for (var i = 0; i < n; i++) {
@@ -2375,6 +2379,8 @@
     }
     this.moving = moving;
     this.idle = moving ? 0 : this.idle + dt;
+    this.tb += ((moving ? this.turbo : 0) - this.tb) * Math.min(1, dt * 8);   /* not pushing on a wall */
+    this.turbo = 0;
     /* turning: the eyes go first, the head swings through a front view
        while the figure mirrors, then settles into the new three-quarter */
     if (facing !== this.face) {
@@ -2391,17 +2397,24 @@
        keeps pace with the ground. Cadence tops out at 3 strides a second;
        past that the planted part of the stride shrinks instead (a jog,
        both feet off the ground between steps). Only the drawn stride
-       eases in and out, never the foot's speed over the ground. */
+       eases in and out, never the foot's speed over the ground. Faster
+       than a walk (turbo) she sprints: a longer stride and more time in
+       the air, with the cadence held near 3.3 strides a second. */
     var v = moving ? speed : 0;
     var wantAmp = moving ? Math.min(1, 0.55 + sN * 1.8) : 0;
     this.amp += (wantAmp - this.amp) * Math.min(1, dt * (moving ? 14 : 7));
-    var reach = 2 * STRIDE * Math.max(0.3, this.amp) * this.scale;   /* planted sweep, px */
-    var freq = Math.min(3, v / (2 * reach));
-    var wantStance = v > 0 ? Math.max(0.18, Math.min(0.5, reach * freq / v)) : 0.5;
+    var over = Math.max(0, Math.min(1, (v - 1.25 * RUN) / (0.75 * RUN)));
+    this.sprint += (over - this.sprint) * Math.min(1, dt * 6);
+    var sp = this.sprint;
+    var reach = 2 * STRIDE * Math.max(0.3, this.amp) * (1 + 0.12 * sp) * this.scale;   /* planted sweep, px */
+    var freq = Math.min(3 + 0.3 * sp, v / (2 * reach));
+    var wantStance = v > 0 ? Math.max(0.18 - 0.055 * sp, Math.min(0.5, reach * freq / v)) : 0.5;
     this.stance += (wantStance - this.stance) * Math.min(1, dt * 12);
     if (moving) {
       this.settle = -1;
-      this.phase = (this.phase + Math.min(4.5, v * this.stance / reach) * dt) % 1;
+      this.phase = (this.phase + Math.min(4.5 - 1.2 * sp, v * this.stance / reach) * dt) % 1;
+      /* turbo: a little dust kicked up behind each footfall */
+      if (this.tb > 0.3 && Math.floor(this.phase * 2) !== Math.floor(this.prevPhase * 2)) this.puff(x, y, facing, 1);
     } else if (this.amp > 0.02) {
       /* stopping: finish the step to the next passing pose (feet
          together, one raised) and let it come down there */
@@ -2442,16 +2455,16 @@
     bobY += crouch * 1.8 + this.land.p;
     this.bobY = bobY;
     /* springs, two substeps */
-    var h = dt / 2, breeze = Math.sin(this.t * 1.3) * 0.04;
+    var h = dt / 2, breeze = Math.sin(this.t * 1.3) * 0.04, tb = this.tb;
     for (var k = 0; k < 2; k++) {
-      this.hair.step(-0.34 * Math.min(1.2, sN) + breeze, -acc * 2.6, h);
+      this.hair.step(-0.34 * Math.min(1.2, sN) - 0.2 * tb + breeze, -acc * 2.6, h);
       this.hair2.step(this.hair.p, 0, h);
-      this.skirt.step(-0.075 * Math.min(1.2, sN) - 0.03 * this.hang, -acc * 0.9 + (bobY - this.bounce.p) * 1.5, h);
-      this.cape.step(-0.9 * Math.min(1.2, sN) + breeze * 0.5, -acc * 2.4, h);
-      this.lean.step((0.085 * Math.min(1.2, sN) + (this.wantCarry ? -0.02 : 0)) * (1 - this.hang), -acc * 0.9 * (1 - this.hang), h);
+      this.skirt.step(-0.075 * Math.min(1.2, sN) - 0.045 * tb - 0.03 * this.hang, -acc * 0.9 + (bobY - this.bounce.p) * 1.5, h);
+      this.cape.step(-0.9 * Math.min(1.2, sN) - 0.35 * tb + breeze * 0.5, -acc * 2.4, h);
+      this.lean.step((0.085 * Math.min(1.2, sN) + 0.06 * sp + (this.wantCarry ? -0.02 : 0)) * (1 - this.hang), -acc * 0.9 * (1 - this.hang), h);
       this.sq.step(0, 0, h);
       this.bounce.step(bobY - hopLift * 0.5, 0, h);
-      this.charm.step(-0.25 * Math.min(1.2, sN), -acc * 3 + (bobY - this.bounce.p) * 6, h);
+      this.charm.step(-0.25 * Math.min(1.2, sN) - 0.12 * tb, -acc * 3 + (bobY - this.bounce.p) * 6, h);
       this.carry.step(carry ? 1 : 0, 0, h);
       this.land.step(0, 0, h);
       this.cheerArm.step(this.hop && !this.hop.quiet ? (hopLift > 0 ? 0.85 : 0.2) : 0, 0, h);
@@ -2508,6 +2521,7 @@
     P.amp = this.amp * (1 - 0.6 * Math.sin(Math.PI * Math.min(1, this.turnT)));
     P.stance = this.stance || 0.5;
     P.run = this.run || 0;
+    P.sprint = this.sprint;
     P.bobY = this.prevBob + ((this.bobY || 0) - this.prevBob) * a;
     P.hang = this.hang;
     P.legSw = this.legSw.p;
@@ -2518,6 +2532,12 @@
     P.skirt = this.skirt.p;
     P.cape = this.cape.p;
     P.charm = this.charm.p;
+    if (this.tb > 0.01) {
+      /* turbo: hair tips and hem flutter in the wind */
+      var ft = (this.t + (a - 1) / 60) * TAU;
+      P.sway2 += Math.sin(ft * 4.3) * 0.045 * this.tb;
+      P.skirt += Math.sin(ft * 5.1 + 1) * 0.012 * this.tb;
+    }
     P.bounce = (this.bobY || 0) - this.hopLift * 0.5 - this.bounce.p;
     P.carry = this.cheerArm.p;
     P.sq += this.crouch * 0.05;
@@ -2543,6 +2563,26 @@
     return P;
   };
 
+  /* Turbo: three soft wind lines that slip away behind her and fade. */
+  var STREAK_Y = [-15, -31, -45];
+  function drawStreaks(c, rig, x, y, sc) {
+    var tt = rig.t + (rig.alpha - 1) / 60, f = rig.face;
+    c.save();
+    c.lineCap = 'round';
+    c.lineWidth = 1.6 * sc;
+    c.strokeStyle = '#ffffff';
+    for (var i = 0; i < 3; i++) {
+      var u = (tt * 1.7 + i * 0.37) % 1;
+      var x0 = x - f * (11 + 24 * u) * sc, len = (9 + 7 * rig.tb) * sc, yy = y + (STREAK_Y[i] + 2 * i * u) * sc;
+      c.globalAlpha = Math.sin(Math.PI * u) * 0.5 * rig.tb;
+      c.beginPath();
+      c.moveTo(x0, yy);
+      c.lineTo(x0 - f * len, yy);
+      c.stroke();
+    }
+    c.restore();
+  }
+
   function drawPuffs(c, rig, sc) {
     if (!rig.puffs.length) return;
     var spr = puffSprite();
@@ -2563,6 +2603,7 @@
      that drives everything instead. */
   function drawCharacter(c, x, y, cust, frame, facing, scale, blink, lift, tm, rig) {
     var P = rig ? rig.pose(lift) : stillPose(frame, facing, blink, lift, tm, x);
+    if (rig && rig.tb > 0.02) drawStreaks(c, rig, x, y, scale || 1);
     drawFigure(c, x, y, cust || Game.MOMOKO_DEFAULT, scale || 1, P);
     if (rig) drawPuffs(c, rig, scale || 1);
   }
@@ -2669,13 +2710,68 @@
   };
 
   var SPEED = 3.2;
-  function Player(x, y) { Walker.call(this, x, y); }
+  function Player(x, y) {
+    Walker.call(this, x, y);
+    this.holdT = 0;          /* seconds the current direction has been held */
+    this.hx = 0;
+    this.hy = 0;
+    this.driveAt = -1e9;
+    this.vx = 0;
+    this.vy = 0;
+    this.coast = 0;          /* 1 .. 0 while extra speed runs out after a release */
+    this.coastStep = 0;
+    this.coastK = 0;
+    this.turbo = 0;          /* 0 .. 1: speed multiplier - 1 while held */
+  }
   Player.prototype = Object.create(Walker.prototype);
   Player.prototype.constructor = Player;
+  /* Turbo: hold a direction and after 5 s she starts to speed up, easing
+     (smoothstep) to twice her walking speed at 10 s. Letting go, or
+     turning back the other way on either axis, puts her back to normal:
+     the timer starts over and any extra speed runs out over a quarter
+     second instead of a dead stop. Gaps with no drive() (the zipline, a
+     cutscene, the shop, being in the other scene) count as letting go.
+     dx, dy: -1 / 0 / 1. sp: walking speed, px per tick. ky: vertical
+     speed as a fraction of sp. Moves her and returns whether she moved. */
+  var TURBO_WAIT = 5, TURBO_FULL = 10, TURBO_COAST = 0.25;
+  Player.prototype.drive = function (dx, dy, sp, ky) {
+    var dt = 1 / 60, now = performance.now();
+    var held = dx !== 0 || dy !== 0;
+    if (now - this.driveAt > 200) this.hx = this.hy = this.turbo = this.coast = 0;
+    if (!held || dx * this.hx < 0 || dy * this.hy < 0 || !(this.hx || this.hy)) this.holdT = 0;
+    this.driveAt = now;
+    if (held) {
+      var was = this.holdT;
+      this.holdT += dt;
+      if (was < TURBO_WAIT && this.holdT >= TURBO_WAIT && Game.audio) Game.audio.play('whoosh');
+      var u = Math.max(0, Math.min(1, (this.holdT - TURBO_WAIT) / (TURBO_FULL - TURBO_WAIT)));
+      this.turbo = u * u * (3 - 2 * u);
+      this.vx = dx * sp * (1 + this.turbo);
+      this.vy = dy * sp * ky * (1 + this.turbo);
+      this.coast = 0;
+    } else {
+      if (this.hx || this.hy) {
+        /* just let go: at a plain walk she stops dead, as she always has */
+        this.coastK = this.turbo;
+        this.coast = this.turbo > 0.01 ? 1 : 0;
+        this.coastStep = dt / (TURBO_COAST * Math.max(0.01, this.turbo));
+      }
+      this.coast = Math.max(0, this.coast - this.coastStep);
+      this.turbo = 0;
+      if (!this.coast) this.vx = this.vy = 0;
+    }
+    this.hx = dx;
+    this.hy = dy;
+    var k = held ? 1 : this.coast;
+    this.x += this.vx * k;
+    this.y += this.vy * k;
+    this.rig.turbo = held ? this.turbo : this.coastK * this.coast;
+    return held || this.coast > 0;
+  };
   Player.prototype.update = function (keys, minX, maxX) {
-    var moving = false;
-    if (keys.left && !keys.right) { this.x -= SPEED; this.facing = -1; moving = true; }
-    else if (keys.right && !keys.left) { this.x += SPEED; this.facing = 1; moving = true; }
+    var dx = keys.left && !keys.right ? -1 : keys.right && !keys.left ? 1 : 0;
+    if (dx) this.facing = dx;
+    var moving = this.drive(dx, 0, SPEED, 0);
     if (this.x < minX) this.x = minX;
     if (this.x > maxX) this.x = maxX;
     this.carry = !!(Game.bag && Game.bag.items && Game.bag.items.length);
