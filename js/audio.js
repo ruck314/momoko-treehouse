@@ -11,6 +11,7 @@
   var musicGain = null;
   var sfxGain = null;
   var pianoGain = null;
+  var player = null;
   var currentMusic = null;
   var muted = false;
   var initialized = false;
@@ -26,6 +27,7 @@
       musicGain = ctx.createGain();
       musicGain.gain.value = 0.3;
       musicGain.connect(masterGain);
+      player = Game.music.createPlayer(ctx, musicGain);
 
       sfxGain = ctx.createGain();
       sfxGain.gain.value = 0.6;
@@ -198,29 +200,35 @@
     playNote(150, 'square', 0.12, 0.18, sfxGain, t + 0.08);
   }
 
-  /* Stage-complete fanfare – a warm major arpeggio with a hammer tail. */
+  /* Stage-complete fanfare – a warm plucked G arpeggio with a hammer
+     thunk up front and a bell on top. */
   function buildComplete() {
     if (!ctx) return;
-    var t = ctx.currentTime;
+    var M = Game.music, t = ctx.currentTime;
     noise(0.06, sfxGain, t, 0.3);
-    var notes = [392, 494, 587, 784];
+    var notes = ['G4', 'B4', 'D5', 'G5'];
     for (var i = 0; i < notes.length; i++) {
-      playNote(notes[i], 'triangle', 0.22, 0.26, sfxGain, t + 0.06 + i * 0.09);
-      playNote(notes[i] * 0.5, 'sine', 0.22, 0.12, sfxGain, t + 0.06 + i * 0.09);
+      M.voice(ctx, sfxGain, 'pluck', notes[i], t + 0.06 + i * 0.09, 0.3, 0.9);
+      M.voice(ctx, sfxGain, 'kalimba', notes[i], t + 0.06 + i * 0.09, 0.3, 0.7);
     }
+    M.voice(ctx, sfxGain, 'bell', 'B5', t + 0.33, 0.5, 0.5);
+    M.voice(ctx, sfxGain, 'bell', 'D6', t + 0.33, 0.5, 0.4);
   }
 
+  /* Party fanfare: kalimba + flute run, landing on a strummed C chord. */
   function victoryJingle() {
     if (!ctx) return;
-    var t = ctx.currentTime;
-    var notes = [523, 587, 659, 784, 659, 784, 1047];
+    var M = Game.music, time = ctx.currentTime;
+    var notes = ['C5', 'D5', 'E5', 'G5', 'E5', 'G5', 'C6'];
     var dur = [0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.5];
-    var time = t;
     for (var i = 0; i < notes.length; i++) {
-      playNote(notes[i], 'triangle', dur[i], 0.28, sfxGain, time);
-      playNote(notes[i] * 0.5, 'sine', dur[i], 0.14, sfxGain, time);
+      M.voice(ctx, sfxGain, 'kalimba', notes[i], time, dur[i], 0.9);
+      M.voice(ctx, sfxGain, 'flute', notes[i], time, dur[i] * 0.9, 0.6);
       time += dur[i];
     }
+    var chord = ['C4', 'E4', 'G4', 'C5'];
+    for (var k = 0; k < chord.length; k++) M.voice(ctx, sfxGain, 'pluck', chord[k], time - 0.5 + k * 0.02, 0.6, 0.7);
+    M.drum(ctx, sfxGain, 'tri', time - 0.5, 0.7);
   }
 
   function sparkle() {
@@ -231,95 +239,19 @@
     }
   }
 
-  /* ---- Music ---- */
-  var musicInterval = null;
-
-  /* Meadow BGM – slow pentatonic in G, the kind of thing you can leave on. */
-  var meadowPattern = [
-    [392, 'triangle'], [440, 'triangle'], [494, 'triangle'], [440, 'triangle'],
-    [392, 'triangle'], [330, 'triangle'], [392, 'triangle'], [494, 'triangle'],
-    [587, 'triangle'], [494, 'triangle'], [440, 'triangle'], [392, 'triangle'],
-    [330, 'triangle'], [294, 'triangle'], [330, 'triangle'], [392, 'triangle'],
-    [440, 'triangle'], [494, 'triangle'], [587, 'triangle'], [494, 'triangle'],
-    [440, 'triangle'], [392, 'triangle'], [330, 'triangle'], [294, 'triangle'],
-    [262, 'triangle'], [330, 'triangle'], [392, 'triangle'], [330, 'triangle'],
-    [294, 'triangle'], [262, 'triangle'], [220, 'triangle'], [196, 'triangle'],
-  ];
-  var meadowBass = [
-    98, 98, 147, 147, 98, 98, 131, 131,
-    147, 147, 110, 110, 98, 98, 147, 147,
-    110, 110, 147, 147, 110, 110, 98, 98,
-    131, 131, 98, 98, 87, 87, 98, 98,
-  ];
-
-  /* Title – same tunes an octave up with a lilt, a bit more sparkle. */
-  var titlePattern = [
-    [523, 'triangle'], [659, 'triangle'], [784, 'triangle'], [659, 'triangle'],
-    [880, 'triangle'], [784, 'triangle'], [659, 'triangle'], [523, 'triangle'],
-    [587, 'triangle'], [698, 'triangle'], [880, 'triangle'], [698, 'triangle'],
-    [784, 'triangle'], [659, 'triangle'], [587, 'triangle'], [494, 'triangle'],
-    [523, 'triangle'], [659, 'triangle'], [784, 'triangle'], [1047, 'triangle'],
-    [880, 'triangle'], [784, 'triangle'], [659, 'triangle'], [587, 'triangle'],
-    [523, 'triangle'], [494, 'triangle'], [440, 'triangle'], [494, 'triangle'],
-    [523, 'triangle'], [587, 'triangle'], [659, 'triangle'], [523, 'triangle'],
-  ];
-  var titleBass = [
-    131, 131, 196, 196, 175, 175, 131, 131,
-    147, 147, 220, 220, 196, 196, 147, 147,
-    131, 131, 196, 196, 175, 175, 147, 147,
-    131, 131, 110, 110, 131, 131, 196, 131,
-  ];
-
-  /* Indoors – sparser, softer, sine-led. */
-  var insidePattern = [
-    [330, 'sine'], [392, 'sine'], [440, 'sine'], [392, 'sine'],
-    [330, 'sine'], [294, 'sine'], [330, 'sine'], [392, 'sine'],
-    [440, 'sine'], [494, 'sine'], [440, 'sine'], [392, 'sine'],
-    [330, 'sine'], [294, 'sine'], [262, 'sine'], [294, 'sine'],
-  ];
-  var insideBass = [
-    131, 131, 110, 110, 98, 98, 131, 131,
-    147, 147, 110, 110, 98, 98, 87, 87,
-  ];
-
+  /* ---- Music ----
+     Songs live in songs.js; music.js streams them with a look-ahead
+     scheduler and crossfades when the type changes. */
   function startMusic(type) {
-    stopMusic();
-    if (!ctx || muted) return;
-    var pattern, bass, tempo, lead;
-    if (type === 'title') {
-      pattern = titlePattern; bass = titleBass; tempo = 132; lead = 0.13;
-    } else if (type === 'inside') {
-      pattern = insidePattern; bass = insideBass; tempo = 88; lead = 0.12;
-    } else {
-      pattern = meadowPattern; bass = meadowBass; tempo = 104; lead = 0.14;
-    }
-    var beatDur = 60 / tempo;
-    var noteIdx = 0;
-
-    function scheduleNotes() {
-      if (!ctx || muted) return;
-      var t = ctx.currentTime;
-      for (var i = 0; i < 4; i++) {
-        var idx = (noteIdx + i) % pattern.length;
-        var note = pattern[idx];
-        var bNote = bass[idx % bass.length];
-        var when = t + i * beatDur;
-        playNote(note[0], note[1], beatDur * 0.8, lead, musicGain, when);
-        playNote(bNote, 'sine', beatDur * 0.9, 0.11, musicGain, when);
-      }
-      noteIdx = (noteIdx + 4) % pattern.length;
-    }
-
-    scheduleNotes();
-    musicInterval = setInterval(scheduleNotes, beatDur * 4 * 1000);
+    if (!ctx || muted) { stopMusic(); return; }
+    var name = Game.songs[type] ? type : 'meadow';
+    if (currentMusic === type && player.current() === name) return;
+    player.play(Game.songs[name], { name: name });
     currentMusic = type;
   }
 
   function stopMusic() {
-    if (musicInterval) {
-      clearInterval(musicInterval);
-      musicInterval = null;
-    }
+    if (player) player.stop(0.4);
     currentMusic = null;
   }
 

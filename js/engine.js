@@ -13,7 +13,7 @@
   var GAME_X = 0, GAME_Y = 0;
 
   /* Bump alongside CACHE_NAME in sw.js and tag the matching git release. */
-  Game.VERSION = 'v1.15.0';
+  Game.VERSION = 'v1.16.0';
 
   var canvas, ctx;
 
@@ -374,6 +374,7 @@
       rebuildFriendEntities();
     }
     Game.ui.startBuildCutscene(stage.id);
+    player.rig.cheer(2);
     state = State.BUILD_CUTSCENE;
     return true;
   }
@@ -429,6 +430,7 @@
   }
 
   /* ---- Update ---- */
+  var NO_KEYS = {};
   function update() {
     t++;
     Game.input.update();
@@ -456,8 +458,11 @@
         break;
 
       case State.BUILD_CUTSCENE:
-        /* Glide over to frame the whole tree while the new part goes on. */
+        /* Glide over to frame the whole tree while the new part goes on.
+           Everyone keeps breathing and blinking (and Momoko cheers). */
         camera.x += (treeCamX() - camera.x) * 0.12;
+        player.update(NO_KEYS, 60, Game.MEADOW.width - 60);
+        for (var fid in friends) friends[fid].update();
         if (Game.ui.updateBuildCutscene() === 'done') {
           camEase = 40;
           /* Chain straight into the next stage if the pile already covers it. */

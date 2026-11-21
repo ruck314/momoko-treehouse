@@ -1936,7 +1936,7 @@
      Pose
      ================================================================== */
   function basePose() {
-    return { face: 1, turnSx: 1, sq: 0, lift: 0, bobY: 0, hipX: 0, lean: 0, phase: 0, amp: 0,
+    return { face: 1, turnSx: 1, sq: 0, lift: 0, bobY: 0, hipX: 0, lean: 0, phase: 0, amp: 0, stance: 0.5,
              breath: 0, eyes: 'o', mouth: 0, sway: 0, sway2: 0, skirt: 0, cape: 0, charm: 0,
              bounce: 0, carry: 0, tilt: 0, t: 0, fidget: 0 };
   }
@@ -1966,7 +1966,6 @@
       P.tilt = Math.sin(t * 0.9) * 0.025;
       P.hipX = Math.sin(t * TAU / 5.3) * 0.35;
     }
-    if (P.lift > 1) { P.mouth = 1; P.carry = Math.min(0.45, P.lift * 0.05); }
     if (blink) P.eyes = 'c';
     return P;
   }
@@ -1986,17 +1985,20 @@
     var kx = hx + Math.cos(ta) * THIGH, ky = hy + Math.sin(ta) * THIGH;
     return { ta: ta, kx: kx, ky: ky, sa: Math.atan2(ay - ky, ax - kx), ax: ax, ay: ay };
   }
-  /* Foot target for a leg at phase p (0 contact, foot forward). */
+  /* Foot target for a leg at phase p (0 contact, foot forward). The foot
+     is planted for the first P.stance of the cycle: half at a walk, a
+     little less at a trot so both feet leave the ground for a moment. */
+  var STRIDE = 4.4;      /* half the planted foot's sweep, local units */
   function footAt(P, p, base) {
     p = ((p % 1) + 1) % 1;
-    var S = 4.2 * P.amp, H = 3.1 * P.amp;
+    var S = STRIDE * P.amp, H = 3.1 * P.amp, B = P.stance || 0.5;
     var x, y = 0, pitch = 0;
-    if (p < 0.5) {
-      x = S * (1 - 4 * p);
-      if (p > 0.32) pitch = (p - 0.32) / 0.18 * 0.4 * P.amp;
-      else if (p < 0.08) pitch = -(0.08 - p) / 0.08 * 0.25 * P.amp;
+    if (p < B) {
+      x = S * (1 - 2 * p / B);
+      if (p > B * 0.64) pitch = (p - B * 0.64) / (B * 0.36) * 0.4 * P.amp;
+      else if (p < B * 0.16) pitch = -(B * 0.16 - p) / (B * 0.16) * 0.25 * P.amp;
     } else {
-      var u = (p - 0.5) * 2;
+      var u = (p - B) / (1 - B);
       var e = u * u * (3 - 2 * u);
       x = -S + 2 * S * e;
       y = -H * Math.sin(Math.PI * u);
@@ -2058,8 +2060,10 @@
       var ua = rest + swing;
       var fa = -0.18 - Math.max(0, -swing) * 0.9;
       if (P.fidget) { ua += s * 0.1 * P.fidget; fa -= 0.4 * P.fidget; }
-      var cua = s > 0 ? -2.8 : 2.8, cfa = s > 0 ? -0.4 : 0.4;
-      ua = ua + (cua - ua) * carry;
+      /* carrying (and cheering): hands up beside her head, elbows out, a
+         trace of the walk swing left in so the load bobs along */
+      var cua = s > 0 ? -2.35 : 2.35, cfa = s > 0 ? -0.5 : 0.5;
+      ua = ua + (cua - ua) * carry * 0.9;
       fa = fa + (cfa - fa) * carry;
       arms.push({ ua: ua, fa: fa });
     }
@@ -2264,6 +2268,15 @@
     this.bounce = new Spring(200, 13);
     this.charm = new Spring(120, 3.5);
     this.carry = new Spring(140, 24);
+    this.land = new Spring(160, 14);      /* knee dip that soaks up a landing */
+    this.cheerArm = new Spring(90, 13);
+    this.scale = 1.3;                     /* draw scale, so feet can match the ground */
+    this.settle = -1;
+    this.hop = null;
+    this.hopT = 0;
+    this.hopsLeft = 0;
+    this.hopLift = 0;
+    this.crouch = 0;
     this.blinkT = 1 + Math.random() * 3;
     this.blinkAge = 9;
     this.lookT = 3 + Math.random() * 4;
@@ -2281,6 +2294,19 @@
                         vx: -dir * (14 + Math.random() * 16) + (Math.random() - 0.5) * 10,
                         age: 0, life: 0.45 + Math.random() * 0.2, r: 3 + Math.random() * 2 });
     }
+  };
+  /* Hops: a steady bounce (title, party) or a couple of cheers (a part of
+     the house going up). Each hop is a crouch, a push-off, a parabola and
+     a landing the squash spring and a knee dip absorb. */
+  Rig.prototype.setHop = function (period, height, phase) {
+    this.hop = { period: period, height: height };
+    this.hopT = (phase || 0) * period;
+    this.hopsLeft = -1;
+  };
+  Rig.prototype.cheer = function (n) {
+    this.hop = { period: 0.78, height: 7 };
+    this.hopT = 0;
+    this.hopsLeft = n;
   };
   Rig.prototype.flip = function () {
     var S = [this.hair, this.hair2, this.skirt, this.cape, this.charm];
@@ -2312,15 +2338,54 @@
       if (moving) this.puff(x, y, -facing, 1);
     }
     if (this.turnT < 1) {
-      this.turnT = Math.min(1, this.turnT + dt / 0.17);
+      this.turnT = Math.min(1, this.turnT + dt / 0.2);
       if (this.turnT >= 0.5 && this.drawFace !== this.face) { this.drawFace = this.face; this.flip(); }
     }
-    /* walk: stride-locked phase, amplitude follows speed */
-    var wantAmp = moving ? Math.min(1, 0.35 + sN * 0.7) : 0;
+    /* walk: the phase follows the distance covered, so a planted foot
+       keeps pace with the ground; past a brisk 3 strides a second the
+       stride stops shortening and the planted part of it shrinks instead */
+    var wantAmp = moving ? Math.min(1, 0.55 + sN * 1.8) : 0;
     this.amp += (wantAmp - this.amp) * Math.min(1, dt * (moving ? 10 : 7));
-    var freq = moving ? 1.05 + 1.3 * Math.min(1.2, sN) : 1.8;
-    if (moving || this.amp > 0.02) this.phase = (this.phase + freq * dt) % 1;
-    var bobY = 0.85 * this.amp * Math.cos(TAU * 2 * (this.phase - 0.06));
+    var stride = 4 * STRIDE * Math.max(0.5, this.amp) * this.scale;
+    var freq = Math.min(3, this.spd / stride);
+    this.stance = 0.5 - 0.12 * Math.max(0, Math.min(1, (sN - 0.4) / 0.6));
+    if (moving) {
+      this.settle = -1;
+      this.phase = (this.phase + freq * dt) % 1;
+    } else if (this.amp > 0.02) {
+      /* stopping: finish the step to the next passing pose (feet
+         together, one raised) and let it come down there */
+      if (this.settle < 0) this.settle = this.phase < 0.25 ? 0.25 : this.phase < 0.75 ? 0.75 : 1.25;
+      var ph = this.phase < this.settle - 0.5 ? this.phase + 1 : this.phase;
+      ph = Math.min(this.settle, ph + Math.max(1.6, freq) * dt);
+      this.phase = ph % 1;
+    }
+    /* the body only dips (just after each contact); the legs are near
+       straight standing, so rising above that would lift the planted foot */
+    var bobY = 0.9 * this.amp * (0.5 + 0.5 * Math.cos(TAU * 2 * (this.phase - 0.06)));
+    /* hop */
+    var hopLift = 0, crouch = 0;
+    if (this.hop) {
+      var T = this.hop.period, HH = this.hop.height, A = 0.2 + 0.035 * HH, C = 0.16;
+      this.hopT += dt;
+      if (this.hopT >= T) {
+        this.hopT -= T;
+        if (this.hopsLeft > 0 && --this.hopsLeft === 0) this.hop = null;
+      }
+      var tau = this.hopT;
+      if (this.hop && tau < C) {
+        var cu = tau / C;
+        crouch = cu < 0.7 ? Math.sin(Math.PI / 2 * cu / 0.7) : Math.cos(Math.PI / 2 * (cu - 0.7) / 0.3);
+      } else if (this.hop && tau < C + A) {
+        var hu = (tau - C) / A;
+        hopLift = HH * 4 * hu * (1 - hu);
+      }
+    }
+    if (hopLift > 0 && !(this.hopLift > 0)) this.sq.v -= 2.2;
+    else if (!(hopLift > 0) && this.hopLift > 0) { this.sq.v += 2.6; this.land.v += 34; }
+    this.hopLift = hopLift;
+    this.crouch = crouch;
+    bobY += crouch * 1.8 + this.land.p;
     this.bobY = bobY;
     /* springs, two substeps */
     var h = dt / 2, breeze = Math.sin(this.t * 1.3) * 0.04;
@@ -2331,9 +2396,11 @@
       this.cape.step(-0.9 * Math.min(1.2, sN) + breeze * 0.5, -acc * 2.4, h);
       this.lean.step(0.085 * Math.min(1.2, sN) + (this.wantCarry ? -0.02 : 0), -acc * 0.9, h);
       this.sq.step(0, 0, h);
-      this.bounce.step(bobY, 0, h);
+      this.bounce.step(bobY - hopLift * 0.5, 0, h);
       this.charm.step(-0.25 * Math.min(1.2, sN), -acc * 3 + (bobY - this.bounce.p) * 6, h);
       this.carry.step(carry ? 1 : 0, 0, h);
+      this.land.step(0, 0, h);
+      this.cheerArm.step(this.hop ? (hopLift > 0 ? 0.85 : 0.2) : 0, 0, h);
     }
     /* blinks, glances, fidgets */
     this.blinkT -= dt;
@@ -2377,6 +2444,7 @@
     P.sq = this.sq.p + (this.turnT < 1 ? (1 - tm) * 0.04 : 0);
     P.phase = this.phase;
     P.amp = this.amp;
+    P.stance = this.stance || 0.5;
     P.bobY = this.bobY || 0;
     P.lean = this.lean.p;
     P.sway = this.hair.p;
@@ -2384,13 +2452,14 @@
     P.skirt = this.skirt.p;
     P.cape = this.cape.p;
     P.charm = this.charm.p;
-    P.bounce = (this.bobY || 0) - this.bounce.p;
-    P.carry = this.carry.p;
+    P.bounce = (this.bobY || 0) - this.hopLift * 0.5 - this.bounce.p;
+    P.carry = Math.max(this.carry.p, this.cheerArm.p);
+    P.sq += this.crouch * 0.05;
     var still = 1 - Math.min(1, this.amp * 2);
     P.breath = Math.sin(this.t * TAU / 3.2) * still;
     P.hipX = Math.sin(this.t * TAU / 5.3) * 0.35 * still;
     P.tilt = Math.sin(this.t * 0.9) * 0.022 * still;
-    P.lift = lift || 0;
+    P.lift = (lift || 0) + this.hopLift;
     /* fidget: a little rock up on the toes, arms swinging in */
     if (this.fidgetAge < 0.8) {
       var u = this.fidgetAge / 0.8, fk = Math.sin(Math.PI * u);
@@ -2400,7 +2469,7 @@
     }
     if (this.look === 'u') P.tilt -= 0.05;
     else if (this.look === 'b') P.tilt += 0.04;
-    P.mouth = this.moving || P.carry > 0.5 ? 1 : 0;
+    P.mouth = this.moving || this.idle < 0.4 || this.hop || P.carry > 0.5 ? 1 : 0;
     var ba = this.blinkAge;
     P.eyes = ba < 0.04 ? 'h' : ba < 0.1 ? 'c' : ba < 0.15 ? 'h' : (this.moving ? 'f' : this.look);
     return P;
@@ -2508,6 +2577,7 @@
     this.blink = this.rig.blinkAge < 0.15;
   };
   Walker.prototype.drawAt = function (c, cust, scale) {
+    this.rig.scale = scale;
     drawCharacter(c, this.x, this.y, cust, this.frame, this.facing, scale, this.blink, 0, undefined, this.rig);
   };
 

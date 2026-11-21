@@ -331,11 +331,11 @@
     Game.tree.drawTree(c, 0, 0, Game.BUILD_STAGES.length, Game.EXT_DEFAULT, t, false);
     c.restore();
     var lila = Game.FRIEND_DEFS[0];
-    var hop = Math.max(0, Math.sin(t / 22)) * 6;
     /* Both stand just in front of the tree, on the same patch of grass. */
     var feetY = TITLE_GROUND + 22;
     E.softShadow(c, 300, feetY, 20, 4, 0.22);
-    E.drawCharacter(c, 300, feetY, Game.customization, 0, -1, 1.75, (t % 220) < 8, hop);
+    E.drawCharacter(c, 300, feetY, Game.customization, 0, -1, 1.75, false, 0, undefined,
+      sceneRig('title', -1, function (r) { r.setHop(2.3, 6, 0); }));
     E.softShadow(c, 46, feetY, 18, 4, 0.22);
     E.drawCharacter(c, 46, feetY, Game.friends && Game.friends[lila.id] ? Game.friends[lila.id].cust : lila.defaultCust,
       0, 1, 1.55, (t % 260) < 8);
@@ -887,6 +887,23 @@
       if (Game.CUSTOM_TABS[i].id === id) return Game.CUSTOM_TABS[i];
     }
     return Game.CUSTOM_TABS[0];
+  }
+
+  /* Rigs for people the menus and rooms paint without a walker, so they
+     blink, glance, turn and hop with the same motion as the meadow. */
+  var sceneRigs = {};
+  function sceneRig(key, facing, setup) {
+    var r = sceneRigs[key];
+    if (!r) {
+      r = sceneRigs[key] = new E.Rig();
+      r.face = r.drawFace = facing;
+      if (setup) setup(r);
+    }
+    var now = performance.now();
+    var dt = r.stepAt ? Math.min(0.05, (now - r.stepAt) / 1000) : 1 / 60;
+    r.stepAt = now;
+    r.update(dt, 0, 0, 0, facing, false);
+    return r;
   }
 
   /* The preview walks on the spot with a real rig: a few steps one way,
@@ -2574,7 +2591,8 @@
       }
       else if (e.friend) {
         E.softShadow(c, fs.x, fs.y + 1, 22, 5, 0.26);
-        E.drawCharacter(c, fs.x, fs.y, Game.friends[e.friend.id].cust, 0, -1, ROOM_CHAR_SCALE, false);
+        E.drawCharacter(c, fs.x, fs.y, Game.friends[e.friend.id].cust, 0, -1, ROOM_CHAR_SCALE, false, 0, undefined,
+          sceneRig('room:' + e.friend.id, -1));
       } else {
         E.softShadow(c, p.x, p.y + 1, 22, 5, 0.26);
         p.drawAt(c, Game.customization, ROOM_CHAR_SCALE);
@@ -3412,9 +3430,10 @@
     var roster = designRoster();
     for (var i = 0; i < roster.length; i++) {
       var cx = V.spots[i % V.spots.length];
-      var hop = Math.max(0, Math.sin(t / 8 + i * 1.3)) * 9;
       var face = (Math.floor(t / 70 + i) % 2) ? 1 : -1;
-      E.drawCharacter(c, cx, 452, custRecord(roster[i].id), 0, face, i === 0 ? 1.25 : 1.1, false, hop);
+      var hopPhase = i * 1.3 / (Math.PI * 2);
+      E.drawCharacter(c, cx, 452, custRecord(roster[i].id), 0, face, i === 0 ? 1.25 : 1.1, false, 0, undefined,
+        sceneRig('party' + i, face, function (r) { r.setHop(0.84, 9, hopPhase); }));
     }
 
     /* confetti, deterministic so it never needs per-frame randomness */
