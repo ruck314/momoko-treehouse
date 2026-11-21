@@ -77,7 +77,8 @@ js/i18n.js          — English & Japanese translations
 js/audio.js         — Web Audio engine, SFX, music, and the piano voice
 js/input.js         — keyboard & touch; raw-pointer and key-capture hooks
 js/levels.js        — ALL data: meadow, build stages, shop, rooms, friends, songs
-js/entities.js      — characters, meadow scenery, material icons, particles
+js/entities.js      — meadow scenery, material icons, particles, paint helpers
+js/character.js     — cel-shaded characters, motion rig, designer previews
 js/tree.js          — the tree and tree house, painted as independent layers
 js/ui.js            — title, designer, shop, exterior, interiors, furniture
 js/piano.js         — keyboard geometry, voices, songbook

@@ -210,29 +210,34 @@
      `field` names the key written into the character record; `colorField`
      optionally enables a swatch row underneath the variant grid. */
   Game.SKIN_COLORS   = ['#ffddbb', '#f6c9a0', '#e0a878', '#c58a5c', '#9c6b45', '#7a4f31'];
-  Game.HAIR_COLORS   = ['#e06088', '#4a3728', '#f5d060', '#4488ff', '#222222', '#b8622f'];
-  Game.OUTFIT_COLORS = ['#ff9ec4', '#7bc45a', '#8fd0e8', '#ffd24a', '#b06aa8', '#e8734a'];
-  Game.SHOE_COLORS   = ['#c05a48', '#4a3728', '#fff4dc', '#4e8f3c', '#5a7fb0', '#ffd24a'];
+  Game.HAIR_COLORS   = ['#e06088', '#4a3728', '#f5d060', '#4488ff', '#222222', '#b8622f', '#a77be0', '#d8d4e6'];
+  Game.OUTFIT_COLORS = ['#ff9ec4', '#7bc45a', '#8fd0e8', '#ffd24a', '#b06aa8', '#e8734a', '#e05060', '#6a78d8'];
+  Game.SHOE_COLORS   = ['#c05a48', '#4a3728', '#fff4dc', '#4e8f3c', '#5a7fb0', '#ffd24a', '#ff9ec4', '#3a3248'];
 
+  /* `preview` names the crop of the rendered hero each option tile shows. */
   Game.CUSTOM_TABS = [
     { id: 'hair',   labelKey: 'tabHair',   field: 'hairStyle', colorField: 'hair',        colors: Game.HAIR_COLORS,
-      variants: ['twinTails', 'longBraids', 'buns', 'bob', 'ponytail'], labelPrefix: 'hair_' },
+      variants: ['twinTails', 'longBraids', 'buns', 'bob', 'ponytail', 'longHair', 'sideTail', 'pixie'],
+      labelPrefix: 'hair_', preview: 'head' },
     { id: 'outfit', labelKey: 'tabOutfit', field: 'outfit',    colorField: 'outfitColor', colors: Game.OUTFIT_COLORS,
-      variants: ['frillyDress', 'sailorDress', 'starDress', 'overalls', 'sweater'], labelPrefix: 'outfit_' },
+      variants: ['frillyDress', 'sailorDress', 'starDress', 'overalls', 'sweater', 'hoodie', 'yukata', 'tutu'],
+      labelPrefix: 'outfit_', preview: 'body' },
     { id: 'shoes',  labelKey: 'tabShoes',  field: 'shoes',     colorField: 'shoeColor',   colors: Game.SHOE_COLORS,
-      variants: ['maryJane', 'sneaker', 'boots'], labelPrefix: 'shoes_' },
+      variants: ['maryJane', 'sneaker', 'boots', 'sandals', 'balletFlats'], labelPrefix: 'shoes_', preview: 'shoes' },
     { id: 'hat',    labelKey: 'tabHat',    field: 'hat',       colorField: null, colors: null,
-      variants: ['none', 'strawHat', 'beret', 'flowerCrown'], labelPrefix: 'hat_' },
+      variants: ['none', 'strawHat', 'beret', 'flowerCrown', 'cap', 'bunnyEars', 'witchHat'], labelPrefix: 'hat_', preview: 'hat' },
     { id: 'extra',  labelKey: 'tabExtra',  field: 'accessory', colorField: null, colors: null,
-      variants: ['none', 'scarf', 'backpack', 'ribbon'], labelPrefix: 'acc_' },
-    { id: 'skin',   labelKey: 'tabSkin',   field: null,        colorField: 'skin',        colors: Game.SKIN_COLORS,
-      variants: [], labelPrefix: '' },
+      variants: ['none', 'scarf', 'backpack', 'ribbon', 'necklace', 'cape', 'satchel'], labelPrefix: 'acc_', preview: 'upper' },
+    { id: 'charm',  labelKey: 'tabCharm',  field: 'charm',     colorField: null, colors: null,
+      variants: ['none', 'glasses', 'sunnies', 'heartClip', 'starClip', 'flowerClip'], labelPrefix: 'charm_', preview: 'face' },
+    { id: 'skin',   labelKey: 'tabSkin',   field: 'skin',      colorField: null, colors: null,
+      variants: Game.SKIN_COLORS, labelPrefix: null, preview: 'face' },
   ];
 
   Game.MOMOKO_DEFAULT = {
     skin: '#ffddbb', hair: '#e06088', outfitColor: '#ff9ec4', shoeColor: '#c05a48',
     hairStyle: 'twinTails', outfit: 'frillyDress', shoes: 'maryJane',
-    hat: 'none', accessory: 'none',
+    hat: 'none', accessory: 'none', charm: 'none',
   };
 
   /* ---- Friends ----
@@ -241,16 +246,16 @@
   Game.FRIEND_DEFS = [
     { id: 'lila',  nameKey: 'friend_lila',  homeRoom: 'main',    meadowX: 1180, greetKey: 'greet_lila',
       defaultCust: { skin: '#f6c9a0', hair: '#4a3728', outfitColor: '#7bc45a', shoeColor: '#4a3728',
-                     hairStyle: 'longBraids', outfit: 'overalls', shoes: 'boots', hat: 'strawHat', accessory: 'none' } },
+                     hairStyle: 'longBraids', outfit: 'overalls', shoes: 'boots', hat: 'strawHat', accessory: 'none', charm: 'none' } },
     { id: 'kai',   nameKey: 'friend_kai',   homeRoom: 'kitchen', meadowX: 1480, greetKey: 'greet_kai',
       defaultCust: { skin: '#c58a5c', hair: '#222222', outfitColor: '#8fd0e8', shoeColor: '#fff4dc',
-                     hairStyle: 'bob', outfit: 'sweater', shoes: 'sneaker', hat: 'none', accessory: 'backpack' } },
+                     hairStyle: 'bob', outfit: 'sweater', shoes: 'sneaker', hat: 'none', accessory: 'backpack', charm: 'glasses' } },
     { id: 'nori',  nameKey: 'friend_nori',  homeRoom: 'bed',     meadowX: 1720, greetKey: 'greet_nori',
       defaultCust: { skin: '#e0a878', hair: '#f5d060', outfitColor: '#ffd24a', shoeColor: '#4e8f3c',
-                     hairStyle: 'buns', outfit: 'sailorDress', shoes: 'maryJane', hat: 'none', accessory: 'ribbon' } },
+                     hairStyle: 'buns', outfit: 'sailorDress', shoes: 'maryJane', hat: 'none', accessory: 'ribbon', charm: 'none' } },
     { id: 'poppy', nameKey: 'friend_poppy', homeRoom: 'music',   meadowX: 800,  greetKey: 'greet_poppy',
       defaultCust: { skin: '#9c6b45', hair: '#b8622f', outfitColor: '#b06aa8', shoeColor: '#5a7fb0',
-                     hairStyle: 'ponytail', outfit: 'starDress', shoes: 'sneaker', hat: 'beret', accessory: 'scarf' } },
+                     hairStyle: 'ponytail', outfit: 'starDress', shoes: 'sneaker', hat: 'beret', accessory: 'scarf', charm: 'starClip' } },
   ];
 
   /* ---- Songbook ----

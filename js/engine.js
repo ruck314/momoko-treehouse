@@ -13,7 +13,7 @@
   var GAME_X = 0, GAME_Y = 0;
 
   /* Bump alongside CACHE_NAME in sw.js and tag the matching git release. */
-  Game.VERSION = 'v1.14.0';
+  Game.VERSION = 'v1.15.0';
 
   var canvas, ctx;
 
@@ -111,10 +111,28 @@
     return target;
   }
 
+  /* A character record from any older (or newer) build: every designer
+     field must be a known option and every colour a hex colour, or it
+     falls back to the default. */
+  var COLOR_FIELDS = ['skin', 'hair', 'outfitColor', 'shoeColor'];
+  function sanitizeCust(cu, def) {
+    for (var i = 0; i < Game.CUSTOM_TABS.length; i++) {
+      var tab = Game.CUSTOM_TABS[i];
+      if (!tab.field || !tab.labelPrefix) continue;
+      if (tab.variants.indexOf(cu[tab.field]) < 0) cu[tab.field] = def[tab.field];
+    }
+    for (var j = 0; j < COLOR_FIELDS.length; j++) {
+      var k = COLOR_FIELDS[j];
+      if (typeof cu[k] !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(cu[k])) cu[k] = def[k];
+    }
+    return cu;
+  }
+
   function load() {
     freshState();
 
     mergeInto(Game.customization, readJSON('customization'));
+    sanitizeCust(Game.customization, Game.MOMOKO_DEFAULT);
 
     var f = readJSON('friends');
     if (f) {
@@ -122,6 +140,7 @@
         if (!f[id]) continue;
         Game.friends[id].unlocked = !!f[id].unlocked;
         mergeInto(Game.friends[id].cust, f[id].cust);
+        sanitizeCust(Game.friends[id].cust, friendDef(id).defaultCust);
       }
     }
 

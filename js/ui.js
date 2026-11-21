@@ -335,10 +335,10 @@
     /* Both stand just in front of the tree, on the same patch of grass. */
     var feetY = TITLE_GROUND + 22;
     E.softShadow(c, 300, feetY, 20, 4, 0.22);
-    E.drawCharacter(c, 300, feetY, Game.customization, 0, -1, 1.25, (t % 220) < 8, hop);
+    E.drawCharacter(c, 300, feetY, Game.customization, 0, -1, 1.75, (t % 220) < 8, hop);
     E.softShadow(c, 46, feetY, 18, 4, 0.22);
     E.drawCharacter(c, 46, feetY, Game.friends && Game.friends[lila.id] ? Game.friends[lila.id].cust : lila.defaultCust,
-      0, 1, 1.1, (t % 260) < 8);
+      0, 1, 1.55, (t % 260) < 8);
     drawButterflies(c);
 
     /* Title. The logo is six thick text strokes, so it is painted once
@@ -700,23 +700,57 @@
     c.fillRect(x, y, 18, h);
   }
 
-  /* Colour chip; the chosen one gets a thick ring and a tick. */
+  /* Colour chip: a glossy bead of the colour. The chosen one sits in a
+     gold setting with a soft halo and a tick; under the pointer a bead
+     swells a little. */
   function swatch(c, r, col, sel) {
     var hot = !sel && pointerOver(c, r.x, r.y, r.w, r.h);
-    c.fillStyle = col;
-    tile(c, r.x, r.y, r.w, r.h, 8, sel ? 4 : (hot ? 3 : 1.8));
-    c.fillStyle = 'rgba(255, 255, 255, 0.28)';
-    E.roundRect(c, r.x + 3, r.y + 3, r.w - 6, r.h * 0.36, 5);
-    c.fill();
+    var cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+    var rad = r.w / 2 - (sel ? 1 : (hot ? 1.5 : 3));
+    c.save();
+    E.softShadow(c, cx, cy + rad * 0.9, rad * 0.95, rad * 0.32, 0.3);
     if (sel) {
-      var cx = r.x + r.w - 6, cy = r.y + 6;
-      E.fillEllipse(c, cx, cy, 9, 9, PAL.leaf);
-      c.strokeStyle = PAL.cream;
-      c.lineWidth = 2.4;
+      c.shadowColor = 'rgba(255, 196, 40, 0.8)';
+      c.shadowBlur = 12;
+      E.fillEllipse(c, cx, cy, rad + 3.5, rad + 3.5, PAL.sun, false);
+      c.shadowBlur = 0;
+      c.shadowColor = 'transparent';
       c.beginPath();
-      c.moveTo(cx - 4, cy); c.lineTo(cx - 1, cy + 3.5); c.lineTo(cx + 4.5, cy - 3.5);
+      c.arc(cx, cy, rad + 3.5, 0, Math.PI * 2);
+      E.ink(c, 1.6, '#b07a18');
+    }
+    var g = c.createRadialGradient(cx - rad * 0.35, cy - rad * 0.45, rad * 0.1, cx, cy, rad);
+    g.addColorStop(0, E.mix(col, '#ffffff', 0.45));
+    g.addColorStop(0.45, col);
+    g.addColorStop(1, E.mix(col, '#2a2466', 0.32));
+    c.beginPath();
+    c.arc(cx, cy, rad, 0, Math.PI * 2);
+    c.fillStyle = g;
+    c.fill();
+    /* sky bounce along the lower edge, a hot glint up top */
+    c.save();
+    c.clip();
+    c.strokeStyle = 'rgba(206, 236, 255, 0.55)';
+    c.lineWidth = 2;
+    c.beginPath();
+    c.arc(cx, cy, rad - 1, Math.PI * 0.15, Math.PI * 0.85);
+    c.stroke();
+    c.restore();
+    E.fillEllipse(c, cx - rad * 0.36, cy - rad * 0.44, rad * 0.34, rad * 0.2, 'rgba(255, 255, 255, 0.85)', false);
+    c.beginPath();
+    c.arc(cx, cy, rad, 0, Math.PI * 2);
+    E.ink(c, sel ? 2 : 1.6, uiInk(col));
+    if (sel) {
+      var tx = r.x + r.w - 3, ty = r.y + 3;
+      E.fillEllipse(c, tx, ty, 8, 8, PAL.leaf);
+      c.strokeStyle = PAL.cream;
+      c.lineWidth = 2.2;
+      c.lineCap = 'round';
+      c.beginPath();
+      c.moveTo(tx - 3.6, ty); c.lineTo(tx - 1, ty + 3); c.lineTo(tx + 3.8, ty - 3);
       c.stroke();
     }
+    c.restore();
   }
 
   /* Screen heading over the meadow: ink letters on a cream keyline with
@@ -799,9 +833,9 @@
 
   var CUST = {
     previewX: 22, previewY: 58, previewW: 252, previewH: 318,
-    tabX: 290, tabY: 60, tabW: 78, tabH: 38, tabGap: 4,
-    gridX: 292, gridY: 110, cellW: 158, cellH: 84, cols: 3, gap: 6,
-    swatchX: 296, swatchY: 296, swatchSize: 40, swatchGap: 10,
+    tabX: 290, tabY: 58, tabW: 67, tabH: 36, tabGap: 4.5,
+    gridX: 290, gridY: 104, cellW: 119, cellH: 98, cols: 4, gap: 6.3,
+    swatchX: 352, swatchY: 318, swatchSize: 36, swatchGap: 9,
     pickerX: 24, pickerY: 398, portrait: 54, portraitGap: 12,
     done: { x: 632, y: 412, w: 152, h: 46 },
   };
@@ -855,6 +889,21 @@
     return Game.CUSTOM_TABS[0];
   }
 
+  /* The preview walks on the spot with a real rig: a few steps one way,
+     a stop, a turn, a few steps back, so every option is seen moving. */
+  var previewRig = null, previewClock = 0, previewLast = 0;
+  function stepPreviewRig() {
+    if (!previewRig) previewRig = new E.Rig();
+    var now = performance.now();
+    var dt = previewLast ? Math.min(0.05, (now - previewLast) / 1000) : 1 / 60;
+    previewLast = now;
+    previewClock = (previewClock + dt) % 7;
+    var k = previewClock;
+    var walking = (k < 2.4) || (k >= 3.5 && k < 5.9);
+    var facing = k < 3.2 || k >= 6.6 ? 1 : -1;
+    previewRig.update(dt, 0, 0, walking ? 150 : 0, facing, false);
+  }
+
   function drawCustomizeScreen(c) {
     t++;
     var target = Game.designTarget || 'momoko';
@@ -871,8 +920,8 @@
     /* Header */
     screenTitle(c, T('customTitle'), 22, 30);
 
-    /* Preview: a big Momoko on a little grassy stage, turning to show
-       both sides, with a few flowers and a butterfly for company. */
+    /* Preview: a big Momoko on a little grassy stage, walking and turning
+       to show both sides, with a few flowers and a butterfly for company. */
     var PX = CUST.previewX, PY = CUST.previewY, PW = CUST.previewW, PH = CUST.previewH;
     c.fillStyle = 'rgba(36, 23, 8, 0.16)';
     E.roundRect(c, PX, PY + 4, PW, PH, 10);
@@ -884,23 +933,21 @@
     c.clip();
     var pgy = PY + PH - 72;
     sceneBackdrop(c, PX, PY, PW, PH, pgy);
-    /* a bush and some flowers either side of the stage */
     E.drawMeadowDecor(c, { type: 'bush', x: PX + 30, y: pgy + 10 });
     E.drawMeadowDecor(c, { type: 'flowers', x: PX + PW - 38, y: pgy + 16, n: 3 }, t);
     E.drawMeadowDecor(c, { type: 'flowers', x: PX + 70, y: pgy + 30, n: 2 }, t);
     var pcx = PX + PW / 2;
-    var pcy = PY + PH - 46;
-    /* soft spotlight behind her so she pops off the sky */
-    var spot = c.createRadialGradient(pcx, pcy - 90, 10, pcx, pcy - 90, 120);
-    spot.addColorStop(0, 'rgba(255, 250, 220, 0.55)');
+    var pcy = PY + PH - 40;
+    var spot = c.createRadialGradient(pcx, pcy - 100, 10, pcx, pcy - 100, 130);
+    spot.addColorStop(0, 'rgba(255, 250, 220, 0.6)');
     spot.addColorStop(1, 'rgba(255, 250, 220, 0)');
     c.fillStyle = spot;
     c.fillRect(PX, PY, PW, PH);
-    E.softShadow(c, pcx + 4, pcy, 56, 10, 0.4);
-    /* walk for a while facing right, then turn and walk facing left */
-    var cycle = Math.floor(t / 150) % 2;
-    var walkFrame = Math.floor(t / 9) % 4 + 1;
-    E.drawCharacter(c, pcx, pcy, cust, walkFrame, cycle ? -1 : 1, 2.75, (t % 190) < 8);
+    stepPreviewRig();
+    c.save();
+    c.translate(pcx, pcy);
+    E.drawCharacter(c, 0, 0, cust, 0, 1, 3.05, false, 0, undefined, previewRig);
+    c.restore();
     var bk = t / 160;
     E.drawButterfly(c, PX + PW - 60 + Math.sin(bk) * 30, PY + 70 + Math.sin(bk * 2.3) * 18, t, bk, PAL.peach);
     sceneFrameShade(c, PX, PY, PW, PH);
@@ -923,23 +970,15 @@
       button(c, tb, T(Game.CUSTOM_TABS[i].labelKey), { active: isSel, font: 12, r: 7 });
     }
 
-    /* Variant grid */
-    for (var v = 0; v < tab.variants.length; v++) {
-      var r = cellRect(v);
+    /* Option tiles: each is a rendered crop of the character wearing it */
+    for (var v = 0; v < tab.variants.length && v < CUST.cols * 2; v++) {
       var vid = tab.variants[v];
-      var sel = tab.field && cust[tab.field] === vid;
-      c.fillStyle = tileFill(c, r, sel, '#fffaf0', 'rgba(255,244,220,0.94)');
-      tile(c, r.x, r.y, r.w, r.h, 8, sel ? 3 : 1.8);
-      drawVariantIcon(c, tab.id, vid, r.x + 40, r.y + r.h / 2, cust);
-      c.fillStyle = PAL.ink;
-      fitFont(c, T(tab.labelPrefix + vid), r.w - 80, 12, 'bold');
-      c.textAlign = 'left';
-      c.textBaseline = 'middle';
-      c.fillText(T(tab.labelPrefix + vid), r.x + 74, r.y + r.h / 2);
+      optionTile(c, cellRect(v), tab, vid, cust, cust[tab.field] === vid);
     }
 
     /* Colour swatches */
     if (tab.colorField && tab.colors) {
+      sectionLabel(c, T('customColor'), CUST.gridX + 2, CUST.swatchY + CUST.swatchSize / 2);
       for (var s = 0; s < tab.colors.length; s++) {
         swatch(c, swatchRect(s), tab.colors[s], cust[tab.colorField] === tab.colors[s]);
       }
@@ -967,6 +1006,78 @@
 
     button(c, CUST.done, T(Game.flags.introSeen ? 'customDone' : 'customStart'),
       { fill: PAL.leafLight, font: 17, shine: true });
+  }
+
+  /* One option card: a little sky stage with the rendered crop on it and
+     the name underneath. The chosen card glows gold, lifts and gets a
+     tick; under the pointer a card lifts a little. */
+  function optionTile(c, r, tab, vid, cust, sel) {
+    var hot = !sel && pointerOver(c, r.x, r.y, r.w, r.h);
+    var lift = sel ? 2 : (hot ? 1 : 0);
+    var x = r.x, y = r.y - lift, w = r.w, h = r.h;
+    c.save();
+    if (sel) {
+      /* soft gold halo */
+      c.shadowColor = 'rgba(255, 196, 40, 0.75)';
+      c.shadowBlur = 14;
+      c.fillStyle = PAL.sun;
+      E.roundRect(c, x, y, w, h, 12);
+      c.fill();
+      c.shadowBlur = 0;
+      c.shadowColor = 'transparent';
+    }
+    var base = sel ? '#ffe9a6' : (hot ? '#fffaf0' : 'rgba(255, 246, 228, 0.95)');
+    c.fillStyle = base;
+    tile(c, x, y, w, h, 12, sel ? 3 : 1.8, sel ? '#b07a18' : undefined);
+    /* the stage */
+    var hasLabel = !!tab.labelPrefix;
+    var sx = x + 6, sy = y + 6, sw = w - 12, sh = hasLabel ? h - 30 : h - 12;
+    c.save();
+    E.roundRect(c, sx, sy, sw, sh, 8);
+    c.clip();
+    var g = c.createLinearGradient(0, sy, 0, sy + sh);
+    g.addColorStop(0, sel ? '#bfe6ff' : '#d8eef8');
+    g.addColorStop(0.72, sel ? '#e9f7ff' : '#eef8fb');
+    g.addColorStop(0.72, sel ? '#bfe3a4' : '#d4ebc4');
+    g.addColorStop(1, sel ? '#9fd27e' : '#bfdfa8');
+    c.fillStyle = g;
+    c.fillRect(sx, sy, sw, sh);
+    var rg = c.createRadialGradient(sx + sw / 2, sy + sh * 0.45, 4, sx + sw / 2, sy + sh * 0.45, sw * 0.6);
+    rg.addColorStop(0, 'rgba(255, 252, 230, 0.7)');
+    rg.addColorStop(1, 'rgba(255, 252, 230, 0)');
+    c.fillStyle = rg;
+    c.fillRect(sx, sy, sw, sh);
+    var cu = {};
+    for (var k in cust) cu[k] = cust[k];
+    cu[tab.field] = vid;
+    E.drawPreview(c, tab.preview, sx, sy, sw, sh, cu);
+    c.restore();
+    E.roundRect(c, sx, sy, sw, sh, 8);
+    c.strokeStyle = sel ? 'rgba(176, 122, 24, 0.55)' : 'rgba(74, 51, 32, 0.22)';
+    c.lineWidth = 1.2;
+    c.stroke();
+    /* name */
+    if (hasLabel) {
+      var label = T(tab.labelPrefix + vid);
+      c.fillStyle = PAL.ink;
+      fitFont(c, label, w - 12, 12, 'bold');
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      c.fillText(label, x + w / 2, y + h - 12.5);
+    }
+    if (sel) tick(c, x + w - 9, y + 9);
+    c.restore();
+  }
+
+  function tick(c, cx, cy) {
+    E.fillEllipse(c, cx, cy, 10, 10, PAL.leaf);
+    c.strokeStyle = PAL.cream;
+    c.lineWidth = 2.4;
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    c.beginPath();
+    c.moveTo(cx - 4.4, cy); c.lineTo(cx - 1.2, cy + 3.6); c.lineTo(cx + 4.6, cy - 3.6);
+    c.stroke();
   }
 
   function nameKeyFor(id) {
@@ -1005,127 +1116,6 @@
     }
     if (hit(CUST.done, mx, my)) return 'done';
     return null;
-  }
-
-  /* ---- Variant icons ---- */
-  function drawVariantIcon(c, tabId, id, cx, cy, cust) {
-    c.save();
-    c.translate(cx, cy);
-    switch (tabId) {
-      case 'hair':
-        E.drawHairPreview(c, 0, 2, 1.1, { hairStyle: id, hair: cust.hair, skin: cust.skin, outfitColor: cust.outfitColor });
-        break;
-      case 'outfit': drawOutfitIcon(c, id, cust.outfitColor); break;
-      case 'shoes': drawShoeIcon(c, id, cust.shoeColor); break;
-      case 'hat': drawHatIcon(c, id, cust); break;
-      case 'extra': drawAccIcon(c, id, cust); break;
-    }
-    c.restore();
-  }
-
-  function drawOutfitIcon(c, id, col) {
-    switch (id) {
-      case 'frillyDress':
-        E.fillPath(c, [[-8, -16], [8, -16], [16, 16], [-16, 16]], col);
-        E.fillEllipse(c, -8, 16, 5, 4, E.shade(col, 22), false);
-        E.fillEllipse(c, 0, 16, 5, 4, E.shade(col, 22), false);
-        E.fillEllipse(c, 8, 16, 5, 4, E.shade(col, 22), false);
-        break;
-      case 'sailorDress':
-        E.fillPath(c, [[-8, -16], [8, -16], [15, 16], [-15, 16]], col);
-        E.fillPath(c, [[-8, -16], [8, -16], [5, -6], [-5, -6]], PAL.cream);
-        break;
-      case 'starDress':
-        E.fillPath(c, [[-8, -16], [8, -16], [15, 16], [-15, 16]], col);
-        c.fillStyle = PAL.sun;
-        E.star(c, -5, 4, 4); E.star(c, 6, 9, 3.4);
-        break;
-      case 'overalls':
-        E.fillRound(c, -11, -10, 22, 26, 4, col);
-        E.fillRound(c, -9, -17, 4, 9, 2, col);
-        E.fillRound(c, 5, -17, 4, 9, 2, col);
-        E.fillRound(c, -5, -2, 10, 7, 2, E.shade(col, -20));
-        break;
-      case 'sweater':
-        E.fillRound(c, -13, -14, 26, 28, 7, col);
-        c.strokeStyle = E.shade(col, -22);
-        c.lineWidth = 1.5;
-        for (var y = -8; y < 12; y += 6) {
-          c.beginPath(); c.moveTo(-11, y); c.lineTo(11, y); c.stroke();
-        }
-        break;
-    }
-  }
-
-  function drawShoeIcon(c, id, col) {
-    switch (id) {
-      case 'maryJane':
-        E.fillRound(c, -14, 0, 13, 9, 4, col);
-        E.fillRound(c, 1, 0, 13, 9, 4, col);
-        break;
-      case 'sneaker':
-        E.fillRound(c, -15, -2, 14, 11, 4, col);
-        E.fillRound(c, 1, -2, 14, 11, 4, col);
-        E.fillRound(c, -15, 4, 14, 4, 2, PAL.cream, false);
-        E.fillRound(c, 1, 4, 14, 4, 2, PAL.cream, false);
-        break;
-      case 'boots':
-        E.fillRound(c, -14, -12, 12, 21, 4, col);
-        E.fillRound(c, 2, -12, 12, 21, 4, col);
-        break;
-    }
-  }
-
-  function drawHatIcon(c, id, cust) {
-    E.fillEllipse(c, 0, 8, 14, 14, '#ffddbb');
-    switch (id) {
-      case 'none':
-        c.fillStyle = 'rgba(74,51,32,0.5)';
-        c.font = 'bold 13px "M PLUS Rounded 1c", sans-serif';
-        c.textAlign = 'center';
-        c.textBaseline = 'middle';
-        c.fillText('—', 0, -10);
-        break;
-      case 'strawHat':
-        E.fillEllipse(c, 0, -4, 24, 6, '#e8c76a');
-        E.fillEllipse(c, 0, -11, 13, 8, '#f0d585');
-        break;
-      case 'beret':
-        E.fillEllipse(c, -1, -8, 16, 8, cust.outfitColor);
-        E.fillEllipse(c, 7, -14, 2.6, 2.6, E.shade(cust.outfitColor, -25));
-        break;
-      case 'flowerCrown':
-        for (var i = -2; i <= 2; i++) {
-          E.fillEllipse(c, i * 7, -7 + Math.abs(i) * 1.6, 4, 3.6, i % 2 === 0 ? PAL.peach : PAL.cream, false);
-          E.fillEllipse(c, i * 7, -7 + Math.abs(i) * 1.6, 1.5, 1.5, PAL.sun, false);
-        }
-        break;
-    }
-  }
-
-  function drawAccIcon(c, id, cust) {
-    switch (id) {
-      case 'none':
-        c.fillStyle = 'rgba(74,51,32,0.5)';
-        c.font = 'bold 15px "M PLUS Rounded 1c", sans-serif';
-        c.textAlign = 'center';
-        c.textBaseline = 'middle';
-        c.fillText('—', 0, 0);
-        break;
-      case 'scarf':
-        E.fillRound(c, -15, -6, 30, 8, 4, '#c05a48');
-        E.fillPath(c, [[6, 0], [14, 2], [11, 18], [3, 15]], '#c05a48');
-        break;
-      case 'backpack':
-        E.fillRound(c, -11, -12, 22, 24, 5, '#4e8f3c');
-        E.fillRound(c, -8, -2, 16, 8, 3, E.shade('#4e8f3c', -25));
-        break;
-      case 'ribbon':
-        E.fillEllipse(c, -8, 0, 7, 5.5, PAL.peach);
-        E.fillEllipse(c, 8, 0, 7, 5.5, PAL.peach);
-        E.fillEllipse(c, 0, 0, 3.4, 3.4, E.shade(PAL.peach, -25));
-        break;
-    }
   }
 
   /* ================================================================
@@ -2587,7 +2577,7 @@
         E.drawCharacter(c, fs.x, fs.y, Game.friends[e.friend.id].cust, 0, -1, ROOM_CHAR_SCALE, false);
       } else {
         E.softShadow(c, p.x, p.y + 1, 22, 5, 0.26);
-        E.drawCharacter(c, p.x, p.y, Game.customization, p.frame, p.facing, ROOM_CHAR_SCALE, p.blink);
+        p.drawAt(c, Game.customization, ROOM_CHAR_SCALE);
       }
     }
 
