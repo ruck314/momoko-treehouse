@@ -1886,6 +1886,117 @@
     }
   }
 
+  /* ================================================================
+     Zipline between the shop and the tree house
+     ================================================================ */
+  /* A launch post: a stout pole with a brace on its outer side, a low
+     plank platform on the side the cable leaves from and a pennant on
+     top. out: +1 if the open meadow (and brace) is to the right. The
+     cable ties on at (x - out * 6, groundY - top). */
+  function drawZipPost(c, x, groundY, top, out, col, t) {
+    var spr = getCachedSprite('zipPost' + out + top, 110, top + 44, function (g) {
+      g.translate(55, top + 38);
+      softShadow(g, -out * 8, 1, 38, 5, 0.22);
+      /* brace, leaning out from the pole */
+      g.save();
+      g.translate(0, -64);
+      g.rotate(-out * 0.48);
+      fillRound(g, -3, 0, 6, 72, 3, PAL.barkLight);
+      g.restore();
+      /* launch platform on the cable side */
+      var dx = -out * 16;
+      fillRound(g, dx - 20, -8, 5, 8, 1.5, PAL.bark);
+      fillRound(g, dx + 15, -8, 5, 8, 1.5, PAL.bark);
+      fillRound(g, dx - 26, -15, 52, 8, 3, PAL.barkLight);
+      g.strokeStyle = PAL.barkDark; g.lineWidth = 0.8; g.globalAlpha = 0.5;
+      for (var i = -1; i <= 1; i++) { g.beginPath(); g.moveTo(dx + i * 13, -14); g.lineTo(dx + i * 13, -8); g.stroke(); }
+      g.globalAlpha = 1;
+      /* the pole, grain and a lit flank */
+      fillRound(g, -5, -top - 16, 10, top + 16, 4, PAL.bark);
+      g.save();
+      roundRect(g, -5, -top - 16, 10, top + 16, 4); g.clip();
+      g.fillStyle = PAL.barkLight; g.globalAlpha = 0.55; g.fillRect(-5, -top - 16, 3, top + 16);
+      g.strokeStyle = PAL.barkDark; g.lineWidth = 0.9; g.globalAlpha = 0.45;
+      for (var k = 0; k < 5; k++) {
+        var gy = -top + 8 + k * (top / 5);
+        g.beginPath(); g.moveTo(1.5, gy); g.quadraticCurveTo(3, gy + 7, 1, gy + 14); g.stroke();
+      }
+      g.restore();
+      fillEllipse(g, 0, -top - 16, 6.5, 3, PAL.barkLight);
+      /* iron eye the cable ties to, on a short arm */
+      fillRound(g, out > 0 ? -12 : 2, -top - 3, 10, 5, 2, PAL.barkLight);
+      fillEllipse(g, -out * 6, -top, 2.6, 2.6, '#9aa0ab');
+    });
+    drawSprite(c, spr, x - 55, groundY - top - 38);
+    /* pennant on a little mast, waving */
+    var px = x, py = groundY - top - 17;
+    c.beginPath(); c.moveTo(px, py); c.lineTo(px, py - 17);
+    ink(c, 1.6, PAL.barkDark);
+    var w = Math.sin(t / 9 + x) * 2.2;
+    fillPath(c, [[px, py - 17], [px - out * 15, py - 13.5 + w], [px, py - 9]], col);
+  }
+
+  /* The cable: a gentle sag between the posts, pulled down into two
+     nearly straight runs under the trolley when someone hangs from it.
+     y(x) = ay + sag * 4u(1-u), plus `dip` tented to the trolley at tx. */
+  function drawZipCable(c, ax, ay, bx, sag, tx, dip, camX, viewW) {
+    var x0 = Math.max(ax, camX - 20), x1 = Math.min(bx, camX + viewW + 20);
+    if (x1 <= x0) return;
+    var n = 28;
+    function at(x) {
+      var u = (x - ax) / (bx - ax);
+      var tent = x < tx ? (x - ax) / Math.max(1, tx - ax) : (bx - x) / Math.max(1, bx - tx);
+      return ay + sag * 4 * u * (1 - u) + dip * tent;
+    }
+    c.beginPath();
+    c.moveTo(x0, at(x0));
+    for (var i = 1; i <= n; i++) {
+      var xa = x0 + (x1 - x0) * (i - 1) / n, xb = x0 + (x1 - x0) * i / n;
+      if (tx > xa && tx < xb) c.lineTo(tx, at(tx));
+      c.lineTo(xb, at(xb));
+    }
+    c.strokeStyle = '#3f3328'; c.lineWidth = 1.8; c.lineJoin = 'round'; c.lineCap = 'round';
+    c.stroke();
+    c.save();
+    c.translate(0, -0.6);
+    c.strokeStyle = 'rgba(255, 244, 220, 0.5)'; c.lineWidth = 0.6;
+    c.stroke();
+    c.restore();
+  }
+
+  /* The trolley riding on the cable at (x, y), and the handle hanging from
+     it: two ropes down to a wooden bar with soft grips, swung by `ang`
+     about the hanger. rope: hanger to bar, px. */
+  function drawZipTrolley(c, x, y, ang, rope) {
+    c.save();
+    c.translate(x, y);
+    c.save();
+    c.translate(0, 5);
+    c.rotate(ang);
+    c.beginPath();
+    c.moveTo(-1.5, 0); c.lineTo(-31, rope);
+    c.moveTo(1.5, 0); c.lineTo(31, rope);
+    ink(c, 1.5, '#b88a52');
+    roundRect(c, -34, rope - 2.4, 68, 4.8, 2.4);
+    c.fillStyle = PAL.barkLight; c.fill(); ink(c, 1.2);
+    roundRect(c, -25, rope - 3.3, 9, 6.6, 3);
+    c.fillStyle = PAL.peach; c.fill(); ink(c, 1.2);
+    roundRect(c, 16, rope - 3.3, 9, 6.6, 3);
+    c.fillStyle = PAL.peach; c.fill(); ink(c, 1.2);
+    c.restore();
+    /* wheels on top of the cable, then the side plate over them */
+    for (var i = -1; i <= 1; i += 2) {
+      c.beginPath(); c.arc(i * 4, -2.4, 3, 0, Math.PI * 2);
+      c.fillStyle = '#9aa0ab'; c.fill(); ink(c, 1.1);
+    }
+    roundRect(c, -7.5, -3.2, 15, 9.5, 3.5);
+    c.fillStyle = '#e8604c'; c.fill(); ink(c, 1.3);
+    c.fillStyle = 'rgba(255, 240, 220, 0.55)';
+    c.fillRect(-5.5, -1.8, 6, 1.4);
+    c.beginPath(); c.arc(0, 3.2, 1, 0, Math.PI * 2); c.fillStyle = '#ffd24a'; c.fill();
+    c.restore();
+  }
+
   window.Game.entities = {
     setView: setView,
     getCachedSprite: getCachedSprite,
@@ -1927,6 +2038,9 @@
     drawSkyBirds: drawSkyBirds,
     drawButterfly: drawButterfly,
     drawShop: drawShop,
+    drawZipPost: drawZipPost,
+    drawZipCable: drawZipCable,
+    drawZipTrolley: drawZipTrolley,
     drawMaterialIcon: drawMaterialIcon,
     fitText: fitText,
     Particle: Particle,

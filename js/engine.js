@@ -13,7 +13,7 @@
   var GAME_X = 0, GAME_Y = 0;
 
   /* Bump alongside CACHE_NAME in sw.js and tag the matching git release. */
-  Game.VERSION = 'v1.16.0';
+  Game.VERSION = 'v1.17.0';
 
   var canvas, ctx;
 
@@ -36,6 +36,7 @@
     HOUSE_INTERIOR: 'houseInterior',
     PIANO: 'piano',
     VICTORY: 'victory',
+    ZIPLINE: 'zipline',
   };
   var state = State.TITLE;
   var prevState = null;
@@ -43,6 +44,8 @@
   var customizeReturn = State.TITLE;
 
   var camera = { x: 0 };
+  var camPrev = 0;            /* camera.x at the start of the last tick */
+  Game.renderAlpha = 1;
   /* Frames left to ease back from the cutscene framing to following Momoko. */
   var camEase = 0;
   function treeCamX() {
@@ -293,6 +296,8 @@
     if (Game.flags.canEnter) {
       list.push({ id: 'enter', x: a.ladderX + 15, r: 52, labelKey: 'promptEnter', promptY: M.groundY - 190 });
     }
+    list.push({ id: 'zip0', x: M.zip.a, r: 44, labelKey: 'promptZipHouse', promptY: M.groundY - ZIP_TOP - 72 });
+    list.push({ id: 'zip1', x: M.zip.b, r: 44, labelKey: 'promptZipShop', promptY: M.groundY - ZIP_TOP - 72 });
     if (Game.flags.canDecorate) {
       list.push({ id: 'paint', x: M.paintPost.x, r: 52, labelKey: 'promptPaint', promptY: M.groundY - 110 });
     }
@@ -449,6 +454,10 @@
         updatePlaying(keys, jp);
         break;
 
+      case State.ZIPLINE:
+        updateZip();
+        break;
+
       case State.PAUSED:
         if (jp.pause) { state = prevState || State.PLAYING; }
         break;
@@ -460,6 +469,7 @@
       case State.BUILD_CUTSCENE:
         /* Glide over to frame the whole tree while the new part goes on.
            Everyone keeps breathing and blinking (and Momoko cheers). */
+        camPrev = camera.x;
         camera.x += (treeCamX() - camera.x) * 0.12;
         player.update(NO_KEYS, 60, Game.MEADOW.width - 60);
         for (var fid in friends) friends[fid].update();
@@ -496,12 +506,15 @@
   function updatePlaying(keys, jp) {
     if (jp.pause) { prevState = state; state = State.PAUSED; return; }
 
+    camPrev = camera.x;
     player.update(keys, 60, Game.MEADOW.width - 60);
     for (var id in friends) friends[id].update();
+    stepZipSwing(0);
 
     var camTarget = Math.max(0, Math.min(Game.MEADOW.width - W, player.x - W / 2));
     if (camEase > 0) { camEase--; camera.x += (camTarget - camera.x) * 0.15; }
     else camera.x = camTarget;
+    if (Math.abs(camera.x - camPrev) > 60) camPrev = camera.x;   /* a jump, not a pan */
 
     if (jp.action) {
       var target = nearest();
@@ -518,6 +531,7 @@
         if (state === State.PLAYING) enterHouse();
         return;
       }
+      if (target.id === 'zip0' || target.id === 'zip1') { startZip(target.id === 'zip0' ? 0 : 1); return; }
       if (target.id === 'paint') { state = State.EXTERIOR; Game.audio.play('select'); return; }
       if (target.id.indexOf('friend:') === 0) {
         var fid = target.id.slice(7);
@@ -528,6 +542,162 @@
         return;
       }
     }
+  }
+
+  /* ---- Zipline ----
+     One cable between a post by the shop (end 0) and one on the tree
+     house side (end 1), with a single trolley that stays where it was
+     left. At the far end she calls it over first. A ride: she hops up
+     and catches the handle, eases off, cruises, eases in, lets go and
+     drops to the grass with a little hop. Nothing about the bag or the
+     build changes -- she rides with whatever she is carrying. */
+  var ZIP_TOP = 128;      /* cable height at the posts, above the grass */
+  var ZIP_SAG = 16;       /* the cable's own sag at mid-span */
+  var ZIP_LOAD = 9;       /* how much more it gives under her */
+  var ZIP_ROPE = 26;      /* hanger to handle bar */
+  var ZIP_RIDE = 2.6, ZIP_CALL = 1.4, ZIP_MOUNT = 0.42, ZIP_DROP = 0.28;   /* seconds */
+  var zip = { at: 0, x: 0, prevX: 0, load: 0, ang: 0, angV: 0, ride: null };
+
+  function zipDock(end) { var Z = Game.MEADOW.zip; return end === 0 ? Z.a + 18 : Z.b - 18; }
+  function zipU(x) { var Z = Game.MEADOW.zip; return Math.max(0, Math.min(1, (x - Z.a) / (Z.b - Z.a))); }
+  function zipCableY(x) { var u = zipU(x); return Game.MEADOW.groundY - ZIP_TOP + ZIP_SAG * 4 * u * (1 - u); }
+  function zipDip(x) { return ZIP_LOAD * Math.sin(Math.PI * zipU(x)) * zip.load; }
+  /* her feet when she hangs from a trolley at x */
+  function zipFeetY(x) { return zipCableY(x) + zipDip(x) + 5 + ZIP_ROPE + E.HANG_GRIP_Y * E.HERO_SCALE; }
+
+  /* Distance 0..1 over T seconds: a cosine ease-in, a cruise and a
+     cosine ease-out, so speed and acceleration never jump. a is in
+     (fraction of the run) / s^2. */
+  function zipProfile(tm, T) {
+    if (tm <= 0) return { s: 0, a: 0 };
+    if (tm >= T) return { s: 1, a: 0 };
+    var ta = 0.32 * T, td = 0.3 * T, vm = 1 / (T - ta / 2 - td / 2), PI = Math.PI;
+    if (tm < ta) return { s: vm / 2 * (tm - ta / PI * Math.sin(PI * tm / ta)), a: vm * PI / (2 * ta) * Math.sin(PI * tm / ta) };
+    var s1 = vm * ta / 2;
+    if (tm < T - td) return { s: s1 + vm * (tm - ta), a: 0 };
+    var tau = tm - (T - td);
+    return { s: s1 + vm * (T - td - ta) + vm / 2 * (tau + td / PI * Math.sin(PI * tau / td)),
+             a: -vm * PI / (2 * td) * Math.sin(PI * tau / td) };
+  }
+
+  /* The handle swings like a pendulum, trailing when the trolley speeds
+     up and swinging ahead when it slows. accel: px/s^2, +x. */
+  function stepZipSwing(accel) {
+    var dt = 1 / 60;
+    /* an empty handle is light and settles quickly */
+    var lean = Math.max(-0.28, Math.min(0.28, accel * 0.0002)) * (0.5 + 0.5 * zip.load);
+    zip.angV += (-30 * (zip.ang - lean) - (2.4 + 6 * (1 - zip.load)) * zip.angV) * dt;
+    zip.ang += zip.angV * dt;
+  }
+
+  function startZip(end) {
+    var dir = end === 0 ? 1 : -1;
+    zip.ride = { end: end, dir: dir, phase: zip.at === end ? 'mount' : 'call', t: 0, x0: player.x, y0: 0 };
+    zip.x = zip.prevX = zipDock(zip.at);
+    player.facing = dir;
+    state = State.ZIPLINE;
+    Game.audio.play(zip.at === end ? 'select' : 'zipCall');
+  }
+
+  function updateZip() {
+    var R = zip.ride, dt = 1 / 60, G = Game.MEADOW.groundY, rig = player.rig;
+    var from = zipDock(R.end), to = zipDock(1 - R.end);
+    camPrev = camera.x;
+    zip.prevX = zip.x;
+    R.t += dt;
+    var accel = 0, k;
+    if (R.phase === 'call') {
+      /* the trolley comes back along the cable to her */
+      var pc = zipProfile(R.t, ZIP_CALL);
+      zip.x = to + (from - to) * pc.s;
+      accel = (from - to) * pc.a;
+      player.animate(false);
+      if (R.t >= ZIP_CALL) { zip.at = R.end; R.phase = 'mount'; R.t = 0; R.x0 = player.x; Game.audio.play('select'); }
+    } else if (R.phase === 'mount') {
+      zip.x = from;
+      if (R.t <= dt * 1.5) rig.land.v += 22;          /* crouch */
+      if (R.t >= 0.1) {
+        /* hop up and catch the handle at the top of the jump */
+        k = Math.min(1, (R.t - 0.1) / (ZIP_MOUNT - 0.1));
+        rig.hanging = true;
+        zip.load = k;
+        player.x = R.x0 + (from - R.x0) * k;
+        player.y = G + (zipFeetY(from) - G) * k - 14 * 4 * k * (1 - k);
+        player.animate(true);
+      } else {
+        player.animate(false);
+      }
+      if (R.t >= ZIP_MOUNT) {
+        rig.sq.v += 1.2;
+        R.phase = 'ride'; R.t = 0;
+        Game.audio.play('zip');
+      }
+    } else if (R.phase === 'ride') {
+      var pr = zipProfile(R.t, ZIP_RIDE);
+      zip.x = from + (to - from) * pr.s;
+      accel = (to - from) * pr.a;
+      zip.load = 1;
+      player.x = zip.x;
+      player.y = zipFeetY(zip.x);
+      player.animate(true);
+      if (R.t >= ZIP_RIDE) {
+        zip.at = 1 - R.end;
+        R.phase = 'drop'; R.t = 0; R.x0 = player.x; R.y0 = player.y;
+        rig.hanging = false;
+      }
+    } else {
+      /* let go: carry on a little, fall onto the grass */
+      zip.x = to;
+      k = Math.min(1, R.t / ZIP_DROP);
+      zip.load = Math.max(0, 1 - k * 3);
+      player.x = R.x0 + R.dir * 22 * (1 - (1 - k) * (1 - k));
+      player.y = R.y0 + (G - R.y0) * k * k;
+      player.animate(false);
+      if (k >= 1) {
+        player.y = G;
+        rig.sq.v += 2.6;
+        rig.land.v += 30;
+        rig.puff(player.x, G, R.dir, 3);
+        rig.hopOnce(4);
+        Game.audio.play('drop');
+        zip.ride = null;
+        camEase = 45;
+        state = State.PLAYING;
+      }
+    }
+    stepZipSwing(accel);
+    for (var id in friends) friends[id].update();
+    /* follow her, looking a little ahead of where she's going */
+    var vx = (player.x - player.fromX) * 60;
+    var camTarget = Math.max(0, Math.min(Game.MEADOW.width - W, player.x + vx * 0.14 - W / 2));
+    camera.x += (camTarget - camera.x) * 0.1;
+  }
+
+  /* Posts, cable and trolley; and Momoko herself while she hangs from
+     it, swung with the handle about the hanger. */
+  function drawZipline(c, camX) {
+    var M = Game.MEADOW, Z = M.zip, G = M.groundY, a = Game.renderAlpha;
+    var ax = Z.a - 6, bx = Z.b + 6, ay = G - ZIP_TOP;
+    if (Z.a > camX - 120 && Z.a < camX + W + 120) E.drawZipPost(c, Z.a, G, ZIP_TOP, -1, PAL.peach, t);
+    if (Z.b > camX - 120 && Z.b < camX + W + 120) E.drawZipPost(c, Z.b, G, ZIP_TOP, 1, PAL.sun, t);
+    var tx = zip.ride ? zip.prevX + (zip.x - zip.prevX) * a : zipDock(zip.at);
+    var dip = zipDip(tx);
+    E.drawZipCable(c, ax, ay, bx, ZIP_SAG, tx, dip, camX, W);
+    E.drawZipTrolley(c, tx, zipCableY(tx) + dip, zip.ang, ZIP_ROPE);
+  }
+
+  function drawZipRider(c) {
+    var rig = player.rig, G = Game.MEADOW.groundY;
+    var fx = player.renderX(), fy = player.renderY();
+    var air = G - fy;
+    if (air > 2) E.softShadow(c, fx, G + 2, Math.max(8, 20 - air * 0.12), 4.5, Math.max(0.1, 0.26 - air * 0.0015));
+    var py = fy - ZIP_ROPE - E.HANG_GRIP_Y * E.HERO_SCALE;
+    c.save();
+    c.translate(fx, py);
+    c.rotate(zip.ang * rig.hang);
+    c.translate(-fx, -py);
+    player.draw(c, Game.customization);
+    c.restore();
   }
 
   /* Shared by the interior's keyboard/D-pad path and its tap path so the
@@ -637,7 +807,7 @@
       case State.TITLE: Game.ui.drawTitleScreen(ctx); break;
       case State.CUSTOMIZE: Game.ui.drawCustomizeScreen(ctx); Game.ui.drawToast(ctx); break;
       case State.INTRO: Game.ui.drawIntroScreen(ctx); break;
-      case State.PLAYING: drawWorld(ctx); break;
+      case State.PLAYING: case State.ZIPLINE: drawWorld(ctx); break;
       case State.PAUSED: drawClipped(function () { drawWorld(ctx); }); Game.ui.drawPauseMenu(ctx); break;
       case State.SHOP_INTERIOR: Game.ui.drawShopInterior(ctx); Game.ui.drawToast(ctx); break;
       case State.BUILD_CUTSCENE: drawWorld(ctx); Game.ui.drawBuildCutsceneOverlay(ctx); break;
@@ -673,12 +843,13 @@
      Momoko walks around indoors too, so the house counts. */
   function showTouchButtons() {
     return state === State.PLAYING || state === State.PAUSED ||
-           state === State.BUILD_CUTSCENE || state === State.HOUSE_INTERIOR;
+           state === State.BUILD_CUTSCENE || state === State.HOUSE_INTERIOR ||
+           state === State.ZIPLINE;
   }
 
   function drawWorld(c) {
     var M = Game.MEADOW;
-    var camX = camera.x;
+    var camX = camPrev + (camera.x - camPrev) * Game.renderAlpha;
 
     /* Sky, clouds and the parallax ridges, then the grass band with its
        path -- all in entities.js. */
@@ -716,13 +887,16 @@
         !building, building ? Game.ui.cutsceneReveal() : undefined);
     }
 
+    drawZipline(c, camX);
+
     /* Friends */
     for (var fid in friends) {
       friends[fid].draw(c, Game.friends[fid].cust);
     }
 
     /* Player */
-    player.draw(c, Game.customization);
+    if (state === State.ZIPLINE) drawZipRider(c);
+    else player.draw(c, Game.customization);
 
     for (var p = 0; p < particles.length; p++) particles[p].draw(c);
     c.restore();
@@ -908,6 +1082,10 @@
       update();
       accumulator -= FIXED_DT;
     }
+    /* Draw the walkers and the camera between the last two ticks; a
+       frozen world (pause, menus) draws where it stopped. */
+    Game.renderAlpha = (state === State.PLAYING || state === State.ZIPLINE ||
+      state === State.BUILD_CUTSCENE || state === State.HOUSE_INTERIOR) ? accumulator / FIXED_DT : 1;
     render();
     requestAnimationFrame(gameLoop);
   }

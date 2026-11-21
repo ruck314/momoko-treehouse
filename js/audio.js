@@ -239,6 +239,44 @@
     }
   }
 
+  /* Zipline: a soft clip-on tick, then wind through a band-pass and a
+     low pulley hum that swell and fade with the ride's speed. */
+  function zipWhirr(dur) {
+    if (!ctx) return;
+    var t = ctx.currentTime;
+    playNote(1320, 'triangle', 0.05, 0.08, sfxGain, t);
+    var n = Math.max(1, Math.floor(ctx.sampleRate * dur));
+    var buf = ctx.createBuffer(1, n, ctx.sampleRate), d = buf.getChannelData(0);
+    for (var i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    var src = ctx.createBufferSource();
+    src.buffer = buf;
+    var bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 1.4;
+    bp.frequency.setValueAtTime(450, t);
+    bp.frequency.linearRampToValueAtTime(1300, t + dur * 0.45);
+    bp.frequency.linearRampToValueAtTime(550, t + dur);
+    var g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.1, t + dur * 0.4);
+    g.gain.setValueAtTime(0.1, t + dur * 0.65);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(bp); bp.connect(g); g.connect(sfxGain);
+    src.start(t);
+    src.stop(t + dur);
+    var o = ctx.createOscillator(), og = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(200, t);
+    o.frequency.linearRampToValueAtTime(390, t + dur * 0.45);
+    o.frequency.linearRampToValueAtTime(230, t + dur);
+    og.gain.setValueAtTime(0.0001, t);
+    og.gain.exponentialRampToValueAtTime(0.03, t + dur * 0.4);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(og); og.connect(sfxGain);
+    o.start(t);
+    o.stop(t + dur);
+  }
+
   /* ---- Music ----
      Songs live in songs.js; music.js streams them with a look-ahead
      scheduler and crossfades when the type changes. */
@@ -284,6 +322,8 @@
         case 'build': buildComplete(); break;
         case 'victory': victoryJingle(); break;
         case 'sparkle': sparkle(); break;
+        case 'zip': zipWhirr(2.6); break;
+        case 'zipCall': zipWhirr(1.4); break;
       }
     },
     startVoice: function (freq, velocity) {

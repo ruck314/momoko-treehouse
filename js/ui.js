@@ -1807,9 +1807,11 @@
   function drawCarryOverlay(c, player, camX) {
     var n = Game.bag.items.length;
     if (n === 0) return;
-    var sx = player.x - camX;
+    var sx = player.renderX() - camX;
     /* clear of her head at the size she is drawn in the meadow */
-    var baseY = player.y - 74 - 56 * (E.HERO_SCALE - 1);
+    var baseY = player.renderY() - 74 - 56 * (E.HERO_SCALE - 1);
+    /* on the zipline, up over the trolley and its handle */
+    baseY -= player.rig.hang * 46;
     if (hasPianoInBag()) {
       /* One piano bobbing overhead, not five. */
       var bobP = Math.sin(t / 14) * 3;

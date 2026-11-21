@@ -39,6 +39,8 @@
     shop: { x: 330, doorX: 330, w: 300, h: 220 },
     tree: { x: 2080, groundY: 400 },
     paintPost: { x: 1880 },
+    /* zipline launch posts: a by the shop, b on the tree house side */
+    zip: { a: 540, b: 1780 },
     /* Background scenery, painted back-to-front. Type dispatch lives in
        entities.js drawMeadowDecor(). */
     decor: [
