@@ -13,7 +13,7 @@
   var GAME_X = 0, GAME_Y = 0;
 
   /* Bump alongside CACHE_NAME in sw.js and tag the matching git release. */
-  Game.VERSION = 'v1.13.0';
+  Game.VERSION = 'v1.14.0';
 
   var canvas, ctx;
 
@@ -268,7 +268,8 @@
     var list = [
       /* Above the roof: lower down it covers the shop's own sign. */
       { id: 'shop', x: M.shop.x + 58, r: 70, labelKey: 'promptShop', promptY: M.groundY - 254 },
-      { id: 'build', x: M.tree.x + 10, r: 78, labelKey: 'promptBuild', promptY: M.groundY - 120 },
+      /* high enough to clear the bag she carries over her head */
+      { id: 'build', x: M.tree.x + 10, r: 78, labelKey: 'promptBuild', promptY: M.groundY - 120 - Math.round(56 * (E.HERO_SCALE - 1)) },
     ];
     if (Game.flags.canEnter) {
       list.push({ id: 'enter', x: a.ladderX + 15, r: 52, labelKey: 'promptEnter', promptY: M.groundY - 190 });
@@ -706,6 +707,7 @@
        HUD. (The grade, vignette and sun shafts are baked into the sky.) */
     E.drawMotes(c, camX, t, 0, W);
     E.drawForeground(c, camX, H, 0, W);
+    E.drawWorldVignette(c, 0, 0, W, H);
 
     /* Prompt for whatever she is standing next to */
     var target = nearest();

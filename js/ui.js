@@ -1012,44 +1012,15 @@
     c.save();
     c.translate(cx, cy);
     switch (tabId) {
-      case 'hair': drawHairIcon(c, id, cust.hair); break;
+      case 'hair':
+        E.drawHairPreview(c, 0, 2, 1.1, { hairStyle: id, hair: cust.hair, skin: cust.skin, outfitColor: cust.outfitColor });
+        break;
       case 'outfit': drawOutfitIcon(c, id, cust.outfitColor); break;
       case 'shoes': drawShoeIcon(c, id, cust.shoeColor); break;
       case 'hat': drawHatIcon(c, id, cust); break;
       case 'extra': drawAccIcon(c, id, cust); break;
     }
     c.restore();
-  }
-
-  function drawHairIcon(c, id, col) {
-    E.fillEllipse(c, 0, 2, 15, 16, '#ffddbb');
-    switch (id) {
-      case 'twinTails':
-        E.fillEllipse(c, -17, 4, 7, 11, col);
-        E.fillEllipse(c, 17, 4, 7, 11, col);
-        break;
-      case 'longBraids':
-        E.fillRound(c, -19, -4, 8, 24, 4, col);
-        E.fillRound(c, 11, -4, 8, 24, 4, col);
-        break;
-      case 'buns':
-        E.fillEllipse(c, -15, -10, 7, 7, col);
-        E.fillEllipse(c, 15, -10, 7, 7, col);
-        break;
-      case 'bob':
-        E.fillEllipse(c, 0, 0, 18, 16, col);
-        E.fillEllipse(c, 0, 5, 14, 12, '#ffddbb');
-        break;
-      case 'ponytail':
-        E.fillPath(c, [[12, -8], [26, 0], [22, 16], [10, 4]], col);
-        break;
-    }
-    c.beginPath();
-    c.arc(0, -1, 16, Math.PI, Math.PI * 2);
-    c.closePath();
-    c.fillStyle = col;
-    c.fill();
-    E.ink(c, 2);
   }
 
   function drawOutfitIcon(c, id, col) {
@@ -1830,7 +1801,8 @@
     var n = Game.bag.items.length;
     if (n === 0) return;
     var sx = player.x - camX;
-    var baseY = player.y - 74;
+    /* clear of her head at the size she is drawn in the meadow */
+    var baseY = player.y - 74 - 56 * (E.HERO_SCALE - 1);
     if (hasPianoInBag()) {
       /* One piano bobbing overhead, not five. */
       var bobP = Math.sin(t / 14) * 3;
@@ -2363,6 +2335,9 @@
 
   /* Where the friend who lives in this room stands. */
   function friendSpot() { return { x: 592, y: 336 }; }
+  /* People indoors are drawn a size up so they stand right next to the
+     furniture instead of looking like dolls beside it. */
+  var ROOM_CHAR_SCALE = 1.3;
 
   function residentOf(roomId) {
     for (var i = 0; i < Game.FRIEND_DEFS.length; i++) {
@@ -2608,11 +2583,11 @@
         drawFurniture(c, e.item.type, e.item.x, e.item.y, 'placed', e.item.flip);
       }
       else if (e.friend) {
-        E.softShadow(c, fs.x, fs.y + 1, 18, 4, 0.26);
-        E.drawCharacter(c, fs.x, fs.y, Game.friends[e.friend.id].cust, 0, -1, 1, false);
+        E.softShadow(c, fs.x, fs.y + 1, 22, 5, 0.26);
+        E.drawCharacter(c, fs.x, fs.y, Game.friends[e.friend.id].cust, 0, -1, ROOM_CHAR_SCALE, false);
       } else {
-        E.softShadow(c, p.x, p.y + 1, 18, 4, 0.26);
-        E.drawCharacter(c, p.x, p.y, Game.customization, p.frame, p.facing, 1, p.blink);
+        E.softShadow(c, p.x, p.y + 1, 22, 5, 0.26);
+        E.drawCharacter(c, p.x, p.y, Game.customization, p.frame, p.facing, ROOM_CHAR_SCALE, p.blink);
       }
     }
 
@@ -3449,7 +3424,7 @@
       var cx = V.spots[i % V.spots.length];
       var hop = Math.max(0, Math.sin(t / 8 + i * 1.3)) * 9;
       var face = (Math.floor(t / 70 + i) % 2) ? 1 : -1;
-      E.drawCharacter(c, cx, 452, custRecord(roster[i].id), 0, face, 1, false, hop);
+      E.drawCharacter(c, cx, 452, custRecord(roster[i].id), 0, face, i === 0 ? 1.25 : 1.1, false, hop);
     }
 
     /* confetti, deterministic so it never needs per-frame randomness */
