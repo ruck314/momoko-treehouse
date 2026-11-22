@@ -1059,19 +1059,64 @@
     return r;
   }
 
-  /* The preview walks on the spot with a real rig: a few steps one way,
-     a stop, a turn, a few steps back, so every option is seen moving. */
-  var previewRig = null, previewClock = 0, previewLast = 0;
+  /* Preview pacing, shared by every Momoko game: a pick sets off a cute
+     reaction for PREVIEW_REACT s, then she settles nearly still so the
+     outfit is easy to see, with one short moment (PREVIEW_MOMENT s) every
+     PREVIEW_GAP_MIN..PREVIEW_GAP_MAX s. `calm` eases toward 1 while
+     settled and 0 during a reaction or moment (time constant PREVIEW_EASE)
+     and damps her idle sway by up to PREVIEW_DAMP. */
+  var PREVIEW_REACT = 2, PREVIEW_MOMENT = 1.2, PREVIEW_GAP_MIN = 6, PREVIEW_GAP_MAX = 12;
+  var PREVIEW_EASE = 0.3, PREVIEW_DAMP = 0.85;
+  var pace = { act: '', age: 0, len: 0, gap: 0, calm: 1, cue: -1 };
+  function pickOf(list) { return list[Math.floor(Math.random() * list.length)]; }
+  function previewAct(kind, len) {
+    pace.act = kind; pace.age = 0; pace.len = len; pace.cue = -1;
+    var r = previewRig;
+    if (kind === 'cheer' || kind === 'twirl') previewHops(2);
+    else if (kind === 'steps') pace.cue = 1.15;            /* a hop once she stops */
+    else if (kind === 'hop') previewHops(1);
+    else if (kind === 'fidget') r.fidgetAge = 0;
+    else if (kind === 'look') { r.look = 'u'; r.lookAge = 0; r.lookDur = 1.1; }
+  }
+  /* hops without cutting one short mid-air */
+  function previewHops(n) {
+    var r = previewRig;
+    if (r.hop && r.hopsLeft > 0) r.hopsLeft = Math.max(r.hopsLeft, n);
+    else r.cheer(n);
+  }
+  function previewPick() { if (previewRig) previewAct(pickOf(['cheer', 'twirl', 'steps']), PREVIEW_REACT); }
+
+  /* The preview is a real rig on the spot: it walks, turns and hops only
+     for the reactions and moments above, otherwise stands and breathes. */
+  var previewRig = null, previewLast = 0;
   function stepPreviewRig() {
-    if (!previewRig) previewRig = new E.Rig();
     var now = performance.now();
-    var dt = previewLast ? Math.min(0.05, (now - previewLast) / 1000) : 1 / 60;
+    var fresh = !previewRig || now - previewLast > 500;
+    if (!previewRig) {
+      previewRig = new E.Rig();
+      previewRig.pose = function (lift) {
+        var P = E.Rig.prototype.pose.call(this, lift), k = 1 - PREVIEW_DAMP * pace.calm;
+        P.hipX *= k;
+        P.tilt *= k;
+        return P;
+      };
+    }
+    var dt = fresh ? 1 / 60 : Math.min(0.05, (now - previewLast) / 1000);
     previewLast = now;
-    previewClock = (previewClock + dt) % 7;
-    var k = previewClock;
-    var walking = (k < 2.4) || (k >= 3.5 && k < 5.9);
-    var facing = k < 3.2 || k >= 6.6 ? 1 : -1;
-    previewRig.update(dt, 0, 0, walking ? 150 : 0, facing, false);
+    if (fresh) previewPick();                              /* she says hello */
+    var r = previewRig, a = pace.act, u = pace.age, speed = 0, facing = 1;
+    if (a === 'twirl' || a === 'turn') facing = u < (a === 'twirl' ? 0.5 : 0.6) ? -1 : 1;
+    else if (a === 'steps' && u < 1) speed = 150;
+    if (pace.cue >= 0 && u >= pace.cue) { pace.cue = -1; previewHops(1); }
+    r.fidgetT = 99;                                        /* fidgets are ours to start */
+    r.update(dt, 0, 0, speed, facing, false);
+    pace.calm += ((a ? 0 : 1) - pace.calm) * (1 - Math.exp(-dt / PREVIEW_EASE));
+    if (a) {
+      pace.age += dt;
+      if (pace.age >= pace.len) { pace.act = ''; pace.gap = PREVIEW_GAP_MIN + Math.random() * (PREVIEW_GAP_MAX - PREVIEW_GAP_MIN); }
+    } else if ((pace.gap -= dt) <= 0) {
+      previewAct(pickOf(['hop', 'turn', 'fidget', 'look']), PREVIEW_MOMENT);
+    }
   }
 
   function drawCustomizeScreen(c) {
@@ -1354,6 +1399,7 @@
     for (i = first; i < tab.variants.length && i < first + CUST_PER_PAGE; i++) {
       if (hit(cellRect(i - first), mx, my)) {
         cust[tab.field] = tab.variants[i];
+        previewPick();
         return 'select';
       }
     }
@@ -1365,13 +1411,13 @@
     }
     if (tab.colorField && tab.colors) {
       for (i = 0; i < tab.colors.length; i++) {
-        if (hitSwatch(swatchRect(i), mx, my)) { cust[tab.colorField] = tab.colors[i]; return 'select'; }
+        if (hitSwatch(swatchRect(i), mx, my)) { cust[tab.colorField] = tab.colors[i]; previewPick(); return 'select'; }
       }
     }
     var roster = designRoster();
     if (roster.length > 1) {
       for (i = 0; i < roster.length; i++) {
-        if (hit(portraitRect(i), mx, my)) { Game.designTarget = roster[i].id; return 'select'; }
+        if (hit(portraitRect(i), mx, my)) { Game.designTarget = roster[i].id; previewPick(); return 'select'; }
       }
     }
     if (hit(CUST.done, mx, my)) return 'done';
@@ -1670,11 +1716,9 @@
     for (var i = 0; i < cells.length; i++) {
       var cell = cells[i];
       var flashing = shopFlashTimer > 0 && shopFlash === cell.type;
-      var owned = cell.kind === 'piano' && Game.flags.pianoOwned;
 
-      var cellHot = !owned && pointerOver(c, cell.x + 4, cell.y + 4, cell.w - 8, cell.h - 8);
-      c.fillStyle = owned ? 'rgba(180,170,150,0.75)'
-        : (flashing ? PAL.sun : (cellHot ? '#fffaf0' : 'rgba(255, 244, 220, 0.95)'));
+      var cellHot = pointerOver(c, cell.x + 4, cell.y + 4, cell.w - 8, cell.h - 8);
+      c.fillStyle = flashing ? PAL.sun : (cellHot ? '#fffaf0' : 'rgba(255, 244, 220, 0.95)');
       tile(c, cell.x + 4, cell.y + 4, cell.w - 8, cell.h - 8, 8, flashing || cellHot ? 3 : 1.8);
 
       if (cell.kind === 'material') {
@@ -1697,7 +1741,7 @@
         c.font = 'bold 15px "M PLUS Rounded 1c", sans-serif';
         c.textAlign = 'center';
         c.textBaseline = 'middle';
-        c.fillText(T(owned ? 'shopPianoSold' : 'furniture_piano'), cell.x + cell.w / 2, cell.y + cell.h - 16);
+        c.fillText(T('furniture_piano'), cell.x + cell.w / 2, cell.y + cell.h - 16);
       }
     }
   }
@@ -1878,7 +1922,6 @@
 
   function buyItem(cell) {
     if (cell.kind === 'piano') {
-      if (Game.flags.pianoOwned) { showToast(T('shopPianoSold')); Game.audio.play('deny'); return; }
       if (Game.bag.items.length > 0) { showToast(T('shopPianoHeavy')); Game.audio.play('deny'); return; }
       /* One item that occupies the whole bag, rather than five copies of a
          piano -- five pianos in the bag read as five pianos. */
@@ -2419,8 +2462,8 @@
      top bar (room tabs, Clear All, Go Outside), one compact palette row
      (a 3x2 block of category tabs, then the item tiles), and the room
      below -- a full-height back wall and a walk-around floor. Momoko walks
-     it in 2D and everything -- furniture, Momoko, the friend who lives
-     here -- is depth-sorted by y so she can stand behind or in front of
+     it in 2D and everything -- furniture, Momoko, any invited guests
+     -- is depth-sorted by y so she can stand behind or in front of
      the furniture.
      ================================================================ */
 
@@ -2496,23 +2539,108 @@
     return roomPlayer;
   }
 
-  /* Where the friend who lives in this room stands. */
-  function friendSpot() { return { x: 592, y: 336 }; }
   /* People indoors are drawn a size up so they stand right next to the
      furniture instead of looking like dolls beside it. */
   var ROOM_CHAR_SCALE = 1.3;
 
-  function residentOf(roomId) {
-    for (var i = 0; i < Game.FRIEND_DEFS.length; i++) {
-      var d = Game.FRIEND_DEFS[i];
-      if (d.homeRoom === roomId && Game.friends[d.id] && Game.friends[d.id].unlocked) return d;
+  /* ---- Guests ----
+     Nobody lives indoors: friends only come in when invited (their
+     `visiting` flag). Guests gather in the main room, the one the ladder
+     opens into, each on the clearest patch of floor -- clear of the
+     furniture, each other, the spot Momoko comes in at and the exit. When
+     a room is too full for one more, they spill into the next room. */
+  var GUEST_HW = 30, GUEST_DEPTH = 50;
+  var guestCache = { key: null, spots: {} };
+
+  function guestClearance(x, y, items, others) {
+    var clear = 999;
+    function gap(ox, oy, hw) {
+      var g = Math.max(Math.abs(x - ox) - hw - GUEST_HW, (Math.abs(y - oy) - GUEST_DEPTH) * 1.4);
+      if (g < clear) clear = g;
     }
-    return null;
+    gap(150, 410, GUEST_HW);
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].type === 'rug') continue;           /* flat: fine to stand on */
+      var fw = FOOTPRINT[items[i].type];
+      gap(items[i].x, items[i].y, Math.max(fw === undefined ? 30 : fw, 26));
+    }
+    for (var j = 0; j < others.length; j++) gap(others[j].x, others[j].y, GUEST_HW + 10);
+    return clear;
   }
 
+  /* Clearest spot, nearest the guest's own favourite x among equally
+     clear ones -- so the others stay put when one goes home. Stops short
+     of the door so the exit stays free. */
+  function bestGuestSpot(items, others, prefX) {
+    var best = null;
+    for (var y = 316; y <= 440; y += 20) {
+      for (var x = 80; x <= 620; x += 20) {
+        var clear = guestClearance(x, y, items, others);
+        var score = Math.min(clear, 20) * 1000 - Math.abs(x - prefX) - Math.abs(y - 372) * 2;
+        if (!best || score > best.score) best = { x: x, y: y, clear: clear, score: score };
+      }
+    }
+    return best;
+  }
+
+  /* id -> { room, x, y } for every guest; recomputed only when the guest
+     list or the furniture changes. */
+  function guestLayout() {
+    var ids = [], prefX = {};
+    for (var i = 0; i < Game.FRIEND_DEFS.length; i++) {
+      var id = Game.FRIEND_DEFS[i].id;
+      prefX[id] = 240 + i * 120;
+      if (Game.friends[id] && Game.friends[id].visiting) ids.push(id);
+    }
+    var key = ids.join(',') + '|' + JSON.stringify(Game.rooms);
+    if (key === guestCache.key) return guestCache.spots;
+    var spots = {}, taken = {};
+    for (var gi = 0; gi < ids.length; gi++) {
+      var pick = null;
+      for (var ri = 0; ri < Game.ROOMS.length; ri++) {
+        var rid = Game.ROOMS[ri].id;
+        var s = bestGuestSpot(Game.rooms[rid] || [], taken[rid] || [], prefX[ids[gi]]);
+        s.room = rid;
+        if (!pick || s.clear > pick.clear) pick = s;
+        if (s.clear >= 0) break;
+      }
+      pick.id = ids[gi];
+      spots[ids[gi]] = pick;
+      (taken[pick.room] = taken[pick.room] || []).push(pick);
+    }
+    guestCache.key = key;
+    guestCache.spots = spots;
+    return spots;
+  }
+
+  function guestsIn(roomId) {
+    var spots = guestLayout(), out = [];
+    for (var id in spots) if (spots[id].room === roomId) out.push(spots[id]);
+    return out;
+  }
+
+  function nearGuest(p) {
+    var list = guestsIn(Game.currentRoom), best = null, bestD = Infinity;
+    for (var i = 0; i < list.length; i++) {
+      var g = list[i], d = Math.abs(p.x - g.x) + Math.abs(p.y - g.y);
+      if (Math.abs(p.x - g.x) < 62 && Math.abs(p.y - g.y) < 62 && d < bestD) { best = g; bestD = d; }
+    }
+    return best;
+  }
+
+  /* Any number of pianos can stand in the house; each one plays. */
+  function isPiano(it) { return it.type === 'piano'; }
   function findPiano(items) {
-    for (var i = 0; i < items.length; i++) if (items[i].type === 'piano') return items[i];
+    for (var i = 0; i < items.length; i++) if (isPiano(items[i])) return items[i];
     return null;
+  }
+  function nearPiano(p, items) {
+    var best = null, bestD = Infinity;
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i], d = Math.abs(p.x - it.x) + Math.abs(p.y - it.y);
+      if (isPiano(it) && Math.abs(p.x - it.x) < 70 && Math.abs(p.y - it.y) < 70 && d < bestD) { best = it; bestD = d; }
+    }
+    return best;
   }
 
   /* A selection can outlive its stock -- place the last one, reload with a
@@ -2568,14 +2696,9 @@
 
   /* What Momoko is standing next to, if anything. */
   function nearestInRoom(p) {
-    var items = Game.rooms[Game.currentRoom] || [];
-    var piano = findPiano(items);
-    if (piano && Math.abs(p.x - piano.x) < 70 && Math.abs(p.y - piano.y) < 70) return 'piano';
-    var resident = residentOf(Game.currentRoom);
-    if (resident) {
-      var fs = friendSpot();
-      if (Math.abs(p.x - fs.x) < 62 && Math.abs(p.y - fs.y) < 62) return 'design:' + resident.id;
-    }
+    if (nearPiano(p, Game.rooms[Game.currentRoom] || [])) return 'piano';
+    var guest = nearGuest(p);
+    if (guest) return 'talk:' + guest.id;
     if (Math.abs(p.x - ROOM.floor.right) < 40 && Math.abs(p.y - ROOM.door.y) < 80) return 'exit';
     return null;
   }
@@ -2725,14 +2848,13 @@
     var shell = E.getBaked('room', rd.id, 0, 0, W, H, 0, function (g) { paintRoomShell(g, rd); });
     c.drawImage(shell, 0, 0, W, H);
 
-    /* Depth-sorted: furniture, Momoko and the resident friend all mingle. */
+    /* Depth-sorted: furniture, Momoko and any guests all mingle. */
     var layer = [];
     for (var fi = 0; fi < items.length; fi++) {
       layer.push({ y: items[fi].y, item: items[fi] });
     }
-    var resident = residentOf(Game.currentRoom);
-    var fs = friendSpot();
-    if (resident) layer.push({ y: fs.y, friend: resident });
+    var guests = guestsIn(Game.currentRoom);
+    for (var gi = 0; gi < guests.length; gi++) layer.push({ y: guests[gi].y, guest: guests[gi] });
     layer.push({ y: p.y, player: true });
     layer.sort(function (a, b) { return a.y - b.y; });
 
@@ -2743,10 +2865,12 @@
         if (fw) E.softShadow(c, e.item.x, e.item.y + 1, fw, Math.max(4, fw * 0.17), 0.3);
         drawFurniture(c, e.item.type, e.item.x, e.item.y, 'placed', e.item.flip);
       }
-      else if (e.friend) {
-        E.softShadow(c, fs.x, fs.y + 1, 22, 5, 0.26);
-        E.drawCharacter(c, fs.x, fs.y, Game.friends[e.friend.id].cust, 0, -1, ROOM_CHAR_SCALE, false, 0, undefined,
-          sceneRig('room:' + e.friend.id, -1));
+      else if (e.guest) {
+        /* guests turn to face Momoko */
+        var g = e.guest, gf = p.x < g.x ? -1 : 1;
+        E.softShadow(c, g.x, g.y + 1, 22, 5, 0.26);
+        E.drawCharacter(c, g.x, g.y, Game.friends[g.id].cust, 0, gf, ROOM_CHAR_SCALE, false, 0, undefined,
+          sceneRig('room:' + g.id, gf));
       } else {
         E.softShadow(c, p.x, p.y + 1, 22, 5, 0.26);
         p.drawAt(c, Game.customization, ROOM_CHAR_SCALE);
@@ -2756,10 +2880,11 @@
     /* Prompts for whatever she is standing next to */
     var near = nearestInRoom(p);
     if (near === 'piano') {
-      var pi = findPiano(items);
+      var pi = nearPiano(p, items);
       drawPrompt(c, pi.x, pi.y - 132, T('promptPiano'));
-    } else if (near && near.indexOf('design:') === 0) {
-      drawPrompt(c, fs.x, fs.y - 106, T('promptTalk'));
+    } else if (near && near.indexOf('talk:') === 0) {
+      var ng = nearGuest(p);
+      drawPrompt(c, ng.x, ng.y - 106, T('promptTalk'));
     } else if (near === 'exit') {
       drawPrompt(c, ROOM.door.x - 30, ROOM.door.y - 118, T('furnitureExit'));
     }
@@ -3027,14 +3152,14 @@
       if (selectedPiece) { placePiece(mx, my); return null; }
 
       var placed = Game.rooms[Game.currentRoom] || [];
-      var pianoItem = findPiano(placed);
-      if (pianoItem && Math.abs(mx - pianoItem.x) < 60 && my > pianoItem.y - 100 && my < pianoItem.y + 20) {
-        return 'piano';
+      var guests = guestsIn(Game.currentRoom);
+      for (i = 0; i < guests.length; i++) {
+        var gs = guests[i];
+        if (Math.abs(mx - gs.x) < 44 && my > gs.y - 96 && my < gs.y + 16) return 'talk:' + gs.id;
       }
-      var resident = residentOf(Game.currentRoom);
-      var fs = friendSpot();
-      if (resident && Math.abs(mx - fs.x) < 44 && my > fs.y - 96 && my < fs.y + 16) {
-        return 'design:' + resident.id;
+      for (i = placed.length - 1; i >= 0; i--) {
+        var pc = placed[i];
+        if (isPiano(pc) && Math.abs(mx - pc.x) < 60 && my > pc.y - 100 && my < pc.y + 20) return 'piano';
       }
       if (Math.abs(mx - ROOM.door.x) < 40 && my > ROOM.door.y - 110 && my < ROOM.door.y + 10) {
         return 'exit';
@@ -3101,6 +3226,101 @@
 
   function saveRooms() {
     if (Game.engine && Game.engine.save) Game.engine.save();
+  }
+
+  /* ================================================================
+     Talking to a friend
+     The same card in the meadow and indoors: portrait, a line from them
+     and a row of choices. Outside: invite them over; inside: ask them to
+     go home. Both offer the designer and a goodbye. Left/Right pick,
+     Space / DO chooses, Escape says bye; or just tap.
+     ================================================================ */
+  var TALK = { x: 170, y: 140, w: 460, h: 220 };
+  var TALK_BTN_W = [172, 120, 100];
+  var talk = { id: null, where: 'meadow', sel: 0, prev: null };
+
+  function openTalk(id, where) {
+    talk.id = id;
+    talk.where = where;
+    talk.prev = null;
+    talk.sel = talkDisabled('invite') ? 1 : 0;
+  }
+  function talkOptions() {
+    return [talk.where === 'house' ? 'home' : 'invite', 'design', 'bye'];
+  }
+  function talkDisabled(opt) { return opt === 'invite' && !Game.flags.canEnter; }
+  function talkBtnRect(i) {
+    var x = TALK.x + 22;
+    for (var k = 0; k < i; k++) x += TALK_BTN_W[k] + 12;
+    return { x: x, y: TALK.y + 158, w: TALK_BTN_W[i], h: 44 };
+  }
+  function talkLabel(opt) {
+    return T({ invite: 'talkInvite', home: 'talkGoHome', design: 'friendDesignPrompt', bye: 'talkBye' }[opt]);
+  }
+  function chooseTalk(opt) {
+    if (talkDisabled(opt)) { Game.audio.play('deny'); return null; }
+    return opt;
+  }
+
+  function updateTalk(keys, jp) {
+    var opts = talkOptions();
+    if (!talk.prev) talk.prev = { left: keys.left, right: keys.right };
+    var step = (keys.left && !talk.prev.left ? -1 : 0) + (keys.right && !talk.prev.right ? 1 : 0);
+    if (step) {
+      do talk.sel = (talk.sel + step + opts.length) % opts.length;
+      while (talkDisabled(opts[talk.sel]));
+    }
+    talk.prev = { left: keys.left, right: keys.right };
+    if (jp.action) return chooseTalk(opts[talk.sel]);
+    if (jp.pause) return 'bye';
+    return null;
+  }
+
+  function handleTalkClick(mx, my) {
+    var opts = talkOptions();
+    for (var i = 0; i < opts.length; i++) {
+      if (hit(talkBtnRect(i), mx, my)) {
+        if (!talkDisabled(opts[i])) talk.sel = i;
+        return chooseTalk(opts[i]);
+      }
+    }
+    return null;
+  }
+
+  function drawTalk(c) {
+    var def = null;
+    for (var d = 0; d < Game.FRIEND_DEFS.length; d++) if (Game.FRIEND_DEFS[d].id === talk.id) def = Game.FRIEND_DEFS[d];
+    if (!def) return;
+    c.fillStyle = 'rgba(36, 23, 8, 0.5)';
+    c.fillRect(VIEW.x, VIEW.y, VIEW.w, VIEW.h);
+    panel(c, TALK.x, TALK.y, TALK.w, TALK.h, PAL.cream);
+    E.drawPortrait(c, TALK.x + 76, TALK.y + 80, 100, Game.friends[def.id].cust);
+    c.beginPath();
+    c.arc(TALK.x + 76, TALK.y + 80, 50, 0, Math.PI * 2);
+    E.ink(c, 2.5);
+
+    var tx = TALK.x + 146, tw = TALK.w - 166;
+    c.fillStyle = PAL.ink;
+    c.font = 'bold 20px ' + FONT;
+    c.textAlign = 'left';
+    c.textBaseline = 'middle';
+    c.fillText(T(def.nameKey), tx, TALK.y + 34);
+    c.font = '15px ' + FONT;
+    var lines = layoutLines(c, T(talk.where === 'house' ? 'guestHello' : def.greetKey), tw);
+    for (var i = 0; i < lines.length && i < 3; i++) c.fillText(lines[i], tx, TALK.y + 66 + i * 21);
+    if (talkDisabled('invite') && talk.where === 'meadow') {
+      c.fillStyle = 'rgba(74, 51, 32, 0.7)';
+      fitFont(c, T('inviteNeedDoor'), tw, 12, 'bold', 9);
+      c.fillText(T('inviteNeedDoor'), tx, TALK.y + 134);
+    }
+
+    var opts = talkOptions();
+    for (var k = 0; k < opts.length; k++) {
+      button(c, talkBtnRect(k), talkLabel(opts[k]), {
+        font: 14, active: k === talk.sel, disabled: talkDisabled(opts[k]),
+        fill: k === 0 ? PAL.leafLight : PAL.cream,
+      });
+    }
   }
 
   /* ================================================================
@@ -3690,7 +3910,10 @@
     /* interior */
     drawHouseInterior: drawHouseInterior, handleHouseInteriorClick: handleHouseInteriorClick,
     updateHouseInterior: updateHouseInterior, drawFurniture: drawFurniture,
-    addStock: addStock, anyPianoPlaced: anyPianoPlaced, residentOf: residentOf,
+    addStock: addStock, anyPianoPlaced: anyPianoPlaced, guestsIn: guestsIn,
+    /* talking to a friend */
+    openTalk: openTalk, updateTalk: updateTalk, handleTalkClick: handleTalkClick, drawTalk: drawTalk,
+    getTalkTarget: function () { return talk.id; },
     getRoomPlayer: function () { return roomPlayer; },
     getSelectedPiece: function () { return selectedPiece; },
     /* pause / victory */

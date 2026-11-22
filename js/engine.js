@@ -13,7 +13,7 @@
   var GAME_X = 0, GAME_Y = 0;
 
   /* Bump alongside CACHE_NAME in sw.js and tag the matching git release. */
-  Game.VERSION = 'v1.19.0';
+  Game.VERSION = 'v1.20.0';
 
   var canvas, ctx;
 
@@ -37,9 +37,12 @@
     PIANO: 'piano',
     VICTORY: 'victory',
     ZIPLINE: 'zipline',
+    TALK: 'talk',
   };
   var state = State.TITLE;
   var prevState = null;
+  /* The talk card sits over the meadow or the house; this is which. */
+  var talkReturn = State.PLAYING;
   /* Where CUSTOMIZE should return to, and whether it's the opening one. */
   var customizeReturn = State.TITLE;
 
@@ -65,7 +68,8 @@
     Game.friends = {};
     for (var i = 0; i < Game.FRIEND_DEFS.length; i++) {
       var d = Game.FRIEND_DEFS[i];
-      Game.friends[d.id] = { unlocked: false, cust: clone(d.defaultCust) };
+      /* visiting: invited into the tree house (and so not in the meadow) */
+      Game.friends[d.id] = { unlocked: false, visiting: false, cust: clone(d.defaultCust) };
     }
     Game.build = { stageIndex: 0, stock: {} };
     Game.bag = { items: [], MAX: 5 };
@@ -142,6 +146,9 @@
       for (var id in Game.friends) {
         if (!f[id]) continue;
         Game.friends[id].unlocked = !!f[id].unlocked;
+        /* Older saves have no guests: friends lived in their rooms then,
+           now the house starts empty until someone is invited. */
+        Game.friends[id].visiting = !!f[id].visiting && Game.friends[id].unlocked;
         mergeInto(Game.friends[id].cust, f[id].cust);
         sanitizeCust(Game.friends[id].cust, friendDef(id).defaultCust);
       }
@@ -186,6 +193,9 @@
     if (!Array.isArray(Game.flags.songsDone)) Game.flags.songsDone = [];
 
     applyStarterFurniture();
+    /* Any number of pianos now; the flag just mirrors "at least one is
+       standing in a room", whatever an older save recorded. */
+    Game.flags.pianoPlaced = Game.ui.anyPianoPlaced();
 
     mergeInto(Game.settings, readJSON('settings'));
     Game.i18n.setLang(Game.settings.lang || 'en');
@@ -277,7 +287,7 @@
     friends = {};
     for (var i = 0; i < Game.FRIEND_DEFS.length; i++) {
       var d = Game.FRIEND_DEFS[i];
-      if (Game.friends[d.id] && Game.friends[d.id].unlocked) {
+      if (Game.friends[d.id] && Game.friends[d.id].unlocked && !Game.friends[d.id].visiting) {
         friends[d.id] = new E.Friend(d);
       }
     }
@@ -387,7 +397,7 @@
   function checkVictory() {
     if (Game.flags.partySeen) return false;
     if (Game.build.stageIndex < Game.BUILD_STAGES.length) return false;
-    if (!Game.flags.pianoPlaced) return false;
+    if (!Game.ui.anyPianoPlaced()) return false;
     for (var i = 0; i < Game.ROOMS.length; i++) {
       if ((Game.rooms[Game.ROOMS[i].id] || []).length < 3) return false;
     }
@@ -495,6 +505,11 @@
       case State.PIANO:
         if (Game.piano.update(keys, jp) === 'exit') exitPiano();
         break;
+
+      case State.TALK:
+        var said = Game.ui.updateTalk(keys, jp);
+        if (said) applyTalkAction(said);
+        break;
     }
 
     for (var i = particles.length - 1; i >= 0; i--) {
@@ -533,14 +548,7 @@
       }
       if (target.id === 'zip0' || target.id === 'zip1') { startZip(target.id === 'zip0' ? 0 : 1); return; }
       if (target.id === 'paint') { state = State.EXTERIOR; Game.audio.play('select'); return; }
-      if (target.id.indexOf('friend:') === 0) {
-        var fid = target.id.slice(7);
-        Game.ui.showToast(Game.i18n.t(friendDef(fid).greetKey) + '\n(' + Game.i18n.t('friendDesignPrompt') + ')', 150);
-        Game.designTarget = fid;
-        customizeReturn = State.PLAYING;
-        state = State.CUSTOMIZE;
-        return;
-      }
+      if (target.id.indexOf('friend:') === 0) { openTalk(target.id.slice(7), 'meadow'); return; }
     }
   }
 
@@ -717,14 +725,44 @@
       return;
     }
     if (act === 'piano') { enterPiano(); return; }
-    if (act.indexOf('design:') === 0) {
-      Game.designTarget = act.slice(7);
-      customizeReturn = State.HOUSE_INTERIOR;
+    if (act.indexOf('talk:') === 0) { openTalk(act.slice(5), 'house'); return; }
+    if (act === 'select') Game.audio.play('select');
+  }
+
+  /* ---- Talking to a friend: invite over, send home, design, bye ---- */
+  function openTalk(id, where) {
+    Game.ui.openTalk(id, where);
+    talkReturn = state;
+    state = State.TALK;
+    Game.audio.play('select');
+  }
+
+  function applyTalkAction(act) {
+    var id = Game.ui.getTalkTarget(), def = friendDef(id);
+    var name = Game.i18n.t(def.nameKey);
+    state = talkReturn;
+    if (act === 'invite') {
+      /* Off to the tree house: she leaves the meadow and turns up indoors. */
+      Game.friends[id].visiting = true;
+      delete friends[id];
+      Game.ui.showToast(Game.i18n.t('guestComing').replace('{name}', name), 150);
+      Game.audio.play('sparkle');
+      save();
+    } else if (act === 'home') {
+      /* Back to her own patch of the meadow. */
+      Game.friends[id].visiting = false;
+      friends[id] = new E.Friend(def);
+      Game.ui.showToast(Game.i18n.t('guestLeft').replace('{name}', name), 150);
+      Game.audio.play('select');
+      save();
+    } else if (act === 'design') {
+      Game.designTarget = id;
+      customizeReturn = talkReturn;
       Game.audio.play('select');
       state = State.CUSTOMIZE;
-      return;
+    } else {
+      Game.audio.play('select');
     }
-    if (act === 'select') Game.audio.play('select');
   }
 
   function friendDef(id) {
@@ -734,13 +772,14 @@
     return Game.FRIEND_DEFS[0];
   }
 
-  /* The friend who lives in the music room noodles on a placed piano. */
+  /* A guest in a room with a piano noodles on it now and then. */
+  var ambientRoom = null;
   function updateAmbientPianist() {
-    if (Game.currentRoom !== 'music') { ambientTimer = 600; return; }
-    var resident = Game.ui.residentOf('music');
-    if (!resident) return;
+    var room = Game.currentRoom;
+    if (room !== ambientRoom) { ambientRoom = room; ambientTimer = 600; }
+    if (Game.ui.guestsIn(room).length === 0) return;
     var hasPiano = false;
-    var items = Game.rooms.music || [];
+    var items = Game.rooms[room] || [];
     for (var i = 0; i < items.length; i++) if (items[i].type === 'piano') hasPiano = true;
     if (!hasPiano) return;
     ambientTimer--;
@@ -815,6 +854,11 @@
       case State.HOUSE_INTERIOR: Game.ui.drawHouseInterior(ctx); break;
       case State.PIANO: Game.piano.draw(ctx); break;
       case State.VICTORY: Game.ui.drawVictory(ctx); break;
+      case State.TALK:
+        if (talkReturn === State.HOUSE_INTERIOR) Game.ui.drawHouseInterior(ctx);
+        else drawWorld(ctx);
+        Game.ui.drawTalk(ctx);
+        break;
     }
 
     ctx.restore();
@@ -844,7 +888,7 @@
   function showTouchButtons() {
     return state === State.PLAYING || state === State.PAUSED ||
            state === State.BUILD_CUTSCENE || state === State.HOUSE_INTERIOR ||
-           state === State.ZIPLINE;
+           state === State.ZIPLINE || state === State.TALK;
   }
 
   function drawWorld(c) {
@@ -1003,6 +1047,11 @@
       case State.HOUSE_INTERIOR:
         action = Game.ui.handleHouseInteriorClick(mx, my);
         if (action) applyInteriorAction(action);
+        break;
+
+      case State.TALK:
+        action = Game.ui.handleTalkClick(mx, my);
+        if (action) applyTalkAction(action);
         break;
 
       case State.VICTORY:

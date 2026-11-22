@@ -7,7 +7,9 @@ bagful at a time, she raises a platform, walls, a roof, a ladder, a door and
 windows, then decorates the outside, furnishes four rooms inside, and finally
 buys a piano and plays it.
 
-Four friends move in as the house goes up, and you can design every one of them.
+Four friends turn up in the meadow as the house goes up. Talk to one to invite
+her over (any number can visit at once), ask a guest to go home when you like,
+and design every one of them. The house starts empty until you invite someone.
 
 ## Play
 
@@ -43,7 +45,8 @@ keys, and slide a finger across the keyboard for a glissando.
 - **Exterior designer** — wall material, roof style, door, windows, colours and
   nine decorations
 - **Four furnished rooms** — walk Momoko around the floor and place any of 26
-  pieces of furniture, bought at the shop and carried home. Each room starts
+  pieces of furniture, bought at the shop and carried home, and as many
+  pianos as you like (each one plays). Each room starts
   with a piece or two of its own so it is never a bare box: a bed in the
   bedroom, a table and fridge in the kitchen, a disco ball in the music room.
 - **Five designable characters** — Momoko plus Lila, Kai, Nori and Poppy
@@ -54,7 +57,7 @@ Each stage needs exactly five material units, so each one is a single trip to
 the shop and back. Leftover materials stay in the pile and count toward the
 next stage — nothing is ever wasted.
 
-| Stage | Needs | Moves in |
+| Stage | Needs | Friend arrives |
 |-------|-------|----------|
 | Platform | 3 plank, 2 rope | — |
 | Walls | 3 plank, 2 nails | Lila |
