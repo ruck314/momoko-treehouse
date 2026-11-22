@@ -37,8 +37,11 @@ keys, and slide a finger across the keyboard for a glissando.
 - **A real playable piano** — Web Audio, two octaves, sustain on key-hold,
   plus a five-song songbook with Listen and Follow-along modes
 - **Six build stages**, each costing exactly one bagful of materials
+- **Character designer** — nine tabs of hair, outfits, shoes, hats, extras,
+  charms, wings and tails, eye colours and skin tones for Momoko and every
+  friend, each option shown on a rendered card
 - **Exterior designer** — wall material, roof style, door, windows, colours and
-  seven decorations
+  nine decorations
 - **Four furnished rooms** — walk Momoko around the floor and place any of 26
   pieces of furniture, bought at the shop and carried home. Each room starts
   with a piece or two of its own so it is never a bare box: a bed in the

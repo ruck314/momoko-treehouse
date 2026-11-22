@@ -25,6 +25,63 @@
     E.setView(x, y, w, h);
   }
   function clipGame(c) { c.beginPath(); c.rect(0, 0, W, H); c.clip(); }
+  /* The two designers have room to spare on a tablet, where the view is
+     much bigger than the viewport: their controls are drawn (and hit
+     tested) scaled up about the viewport's centre, so the tiles and tabs
+     are comfortable under a small finger. 1 everywhere else. */
+  function menuScale() {
+    return Math.max(1, Math.min(1.35, (VIEW.w - 60) / W, (VIEW.h - 60) / H));
+  }
+  function scaleMenu(c) {
+    var s = menuScale();
+    c.translate(W / 2, H / 2);
+    c.scale(s, s);
+    c.translate(-W / 2, -H / 2);
+  }
+  function menuX(mx) { return (mx - W / 2) / menuScale() + W / 2; }
+  function menuY(my) { return (my - H / 2) / menuScale() + H / 2; }
+  /* A designer's tabs, cards and colour chips only change when something
+     is tapped or hovered (and the little scene behind a preview never
+     does), so each is painted into a layer at screen resolution and
+     blitted. L: its { cv, sig }; box: the part of the viewport it covers;
+     sig: everything its look depends on; paint(g) draws it in viewport
+     coordinates. */
+  var layerEpoch = 0;
+  function cachedLayer(c, L, box, sig, paint) {
+    var m = c.getTransform();
+    var ox = Math.floor(m.a * box.x + m.e), oy = Math.floor(m.d * box.y + m.f);
+    var w = Math.ceil(m.a * box.w) + 2, h = Math.ceil(m.d * box.h) + 2;
+    sig += '|' + Game.i18n.getLang() + '|' + layerEpoch + '|' + m.a + '|' + ox + '|' + oy;
+    if (sig !== L.sig) {
+      L.sig = sig;
+      if (!L.cv) L.cv = document.createElement('canvas');
+      if (L.cv.width !== w || L.cv.height !== h) { L.cv.width = w; L.cv.height = h; }
+      var g = L.cv.getContext('2d');
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.clearRect(0, 0, w, h);
+      g.setTransform(m.a, 0, 0, m.d, m.e - ox, m.f - oy);
+      layerX = ox; layerY = oy;
+      paint(g);
+      layerX = layerY = 0;
+    }
+    c.save();
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.drawImage(L.cv, ox, oy);
+    c.restore();
+  }
+  /* Which of the rects the pointer is over, for a layer's signature:
+     kind + index, or ''. rectOf(i) gives rect i of n; pad widens it. */
+  function hotRect(c, kind, n, rectOf, pad) {
+    for (var i = 0; i < n; i++) {
+      var r = rectOf(i);
+      if (pointerOver(c, r.x - pad, r.y - pad, r.w + pad * 2, r.h + pad * 2)) return kind + i;
+    }
+    return '';
+  }
+  function pointerDown() {
+    var p = Game.input && Game.input.pointer;
+    return p && p.px >= 0 && p.down ? 1 : 0;
+  }
   /* Grass from gy down to the bottom of the view, under the painted band. */
   function fillViewGrass(c, gy) {
     /* One gradient from the sunlit back edge to the deep grass at the
@@ -54,10 +111,12 @@
      the caller is currently drawing in (the pointer is stored in
      backing-store pixels and mapped back through the live transform). */
   var anyHot = false;
+  /* Where the layer being painted sits on the screen (see cachedLayer). */
+  var layerX = 0, layerY = 0;
   function pointerOver(c, x, y, w, h) {
     var p = Game.input && Game.input.pointer;
     if (!p || p.px < 0 || !c.getTransform) return false;
-    var pt = c.getTransform().inverse().transformPoint(new DOMPoint(p.px, p.py));
+    var pt = c.getTransform().inverse().transformPoint(new DOMPoint(p.px - layerX, p.py - layerY));
     var over = pt.x >= x && pt.x <= x + w && pt.y >= y && pt.y <= y + h;
     if (over) anyHot = true;
     return over;
@@ -181,12 +240,6 @@
     c.stroke();
     E.roundRect(c, x, y, w, h, r);
     E.ink(c, inkW || 2, inkCol);
-  }
-
-  /* Hover tint for selectable tiles (grid cells, swatches, portraits). */
-  function tileFill(c, r, sel, hotFill, baseFill) {
-    var hot = !sel && pointerOver(c, r.x, r.y, r.w, r.h);
-    return sel ? PAL.sun : (hot ? hotFill : baseFill);
   }
 
   /* Split text into lines that fit maxWidth. Breaks on spaces and \n, and
@@ -635,19 +688,28 @@
 
   /* Little framed outdoor scene -- sky, sun, a far hill and grass -- shared
      by the intro picture and the designer previews. Caller clips. */
+  var sceneLayers = {}, sceneNow = null;
   function sceneBackdrop(c, x, y, w, h, gy) {
+    /* everything but the sun is still: one layer per picture size */
+    var key = w + 'x' + h;
+    var L = sceneLayers[key] || (sceneLayers[key] = { cv: null, sig: '', box: { x: 0, y: 0, w: w, h: h }, gy: 0 });
+    L.box.x = x; L.box.y = y; L.gy = gy;
+    sceneNow = L;
+    cachedLayer(c, L, L.box, key + '|' + (gy - y), paintScene);
+    c.save();
+    c.translate(x + w - 50, y + 50);
+    c.scale(0.72, 0.72);
+    E.drawSun(c, 0, 0, t);
+    c.restore();
+  }
+  function paintScene(c) {
+    var x = sceneNow.box.x, y = sceneNow.box.y, w = sceneNow.box.w, h = sceneNow.box.h, gy = sceneNow.gy;
     var sky = c.createLinearGradient(0, y, 0, gy);
     sky.addColorStop(0, '#4fa9e3');
     sky.addColorStop(0.55, '#9ad6f2');
     sky.addColorStop(1, '#fdf0c2');
     c.fillStyle = sky;
     c.fillRect(x, y, w, gy - y);
-    var sx = x + w - 50, sy = y + 50;
-    c.save();
-    c.translate(sx, sy);
-    c.scale(0.72, 0.72);
-    E.drawSun(c, 0, 0, t);
-    c.restore();
     E.drawSkyCloud(c, x + 58, y + 58, 0.5, 0.95);
     /* two hills: a hazy blue-green one behind a sunlit green one */
     var hg = c.createLinearGradient(0, gy - 96, 0, gy);
@@ -700,46 +762,116 @@
     c.fillRect(x, y, 18, h);
   }
 
-  /* Colour chip: a glossy bead of the colour. The chosen one sits in a
-     gold setting with a soft halo and a tick; under the pointer a bead
-     swells a little. */
-  function swatch(c, r, col, sel) {
-    var hot = !sel && pointerOver(c, r.x, r.y, r.w, r.h);
+  /* Colour chip, shaped like the thing it colours: a lock of hair, a
+     folded swatch of cloth, or a glossy bead for anything else. The
+     chosen one sits on a gold plate with a soft halo and a tick; under
+     the pointer a chip swells a little. */
+  function chipPath(c, kind, cx, cy, rad) {
+    c.beginPath();
+    if (kind === 'hair') {
+      /* a teardrop lock, curling at the tip */
+      c.moveTo(cx - rad * 0.2, cy - rad);
+      c.bezierCurveTo(cx + rad * 1.05, cy - rad * 0.9, cx + rad * 1.1, cy + rad * 0.5, cx + rad * 0.1, cy + rad);
+      c.quadraticCurveTo(cx + rad * 0.35, cy + rad * 0.55, cx - rad * 0.1, cy + rad * 0.5);
+      c.quadraticCurveTo(cx - rad * 0.2, cy + rad * 0.9, cx - rad * 0.7, cy + rad * 0.86);
+      c.bezierCurveTo(cx - rad * 0.3, cy + rad * 0.4, cx - rad * 1.2, cy - rad * 0.2, cx - rad * 0.2, cy - rad);
+      c.closePath();
+    } else if (kind === 'cloth') {
+      /* a pinked square of fabric */
+      var n = 5, s = rad * 0.92, st = 2 * s / n, i;
+      c.moveTo(cx - s, cy - s);
+      for (i = 0; i < n; i++) { c.lineTo(cx - s + st * (i + 0.5), cy - s - st * 0.3); c.lineTo(cx - s + st * (i + 1), cy - s); }
+      for (i = 0; i < n; i++) { c.lineTo(cx + s + st * 0.3, cy - s + st * (i + 0.5)); c.lineTo(cx + s, cy - s + st * (i + 1)); }
+      for (i = 0; i < n; i++) { c.lineTo(cx + s - st * (i + 0.5), cy + s + st * 0.3); c.lineTo(cx + s - st * (i + 1), cy + s); }
+      for (i = 0; i < n; i++) { c.lineTo(cx - s - st * 0.3, cy + s - st * (i + 0.5)); c.lineTo(cx - s, cy + s - st * (i + 1)); }
+      c.closePath();
+    } else {
+      c.arc(cx, cy, rad, 0, Math.PI * 2);
+    }
+  }
+  /* The chip itself, painted once per colour and size and kept. */
+  var chips = {}, chipCount = 0;
+  function chipSprite(c, kind, col, rad, inkW) {
+    var m = c.getTransform();
+    var res = Math.min(6, Math.round(Math.sqrt(m.a * m.a + m.b * m.b) * 100) / 100);
+    var key = (kind || '') + col + rad + inkW + '@' + res;
+    var cv = chips[key];
+    if (cv) return cv;
+    if (chipCount > 200) { chips = {}; chipCount = 0; }
+    var half = rad * 1.25 + 3;
+    cv = chips[key] = document.createElement('canvas');
+    chipCount++;
+    cv.width = cv.height = Math.ceil(half * 2 * res);
+    var g = cv.getContext('2d');
+    g.scale(res, res);
+    g.lineJoin = 'round';
+    var cx = half, cy = half;
+    var gr = g.createRadialGradient(cx - rad * 0.35, cy - rad * 0.45, rad * 0.1, cx, cy, rad * 1.15);
+    gr.addColorStop(0, E.mix(col, '#ffffff', 0.45));
+    gr.addColorStop(0.45, col);
+    gr.addColorStop(1, E.mix(col, '#2a2466', 0.32));
+    chipPath(g, kind, cx, cy, rad);
+    g.fillStyle = gr;
+    g.fill();
+    g.save();
+    g.clip();
+    if (kind === 'hair') {
+      /* strands, and the band of sheen across the lock */
+      g.strokeStyle = E.mix(col, '#2a2466', 0.4);
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(cx - rad * 0.1, cy - rad * 0.8); g.quadraticCurveTo(cx + rad * 0.6, cy - rad * 0.1, cx + rad * 0.05, cy + rad * 0.8);
+      g.moveTo(cx - rad * 0.3, cy - rad * 0.7); g.quadraticCurveTo(cx + rad * 0.1, cy, cx - rad * 0.4, cy + rad * 0.7);
+      g.stroke();
+      g.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+      g.lineWidth = rad * 0.26;
+      g.beginPath();
+      g.moveTo(cx - rad * 0.9, cy - rad * 0.2); g.quadraticCurveTo(cx, cy - rad * 0.62, cx + rad * 0.9, cy - rad * 0.18);
+      g.stroke();
+    } else if (kind === 'cloth') {
+      /* a soft fold and a row of stitches inside the edge */
+      g.fillStyle = 'rgba(42, 36, 102, 0.16)';
+      g.beginPath();
+      g.moveTo(cx + rad * 0.2, cy - rad * 1.3); g.lineTo(cx + rad * 1.3, cy - rad * 1.3); g.lineTo(cx + rad * 1.3, cy + rad * 1.3); g.lineTo(cx - rad * 0.3, cy + rad * 1.3);
+      g.closePath();
+      g.fill();
+      g.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+      g.lineWidth = 1;
+      g.setLineDash([2.2, 2]);
+      g.strokeRect(cx - rad * 0.66, cy - rad * 0.66, rad * 1.32, rad * 1.32);
+      g.setLineDash([]);
+    } else {
+      /* sky bounce along the lower edge, a hot glint up top */
+      g.strokeStyle = 'rgba(206, 236, 255, 0.55)';
+      g.lineWidth = 2;
+      g.beginPath();
+      g.arc(cx, cy, rad - 1, Math.PI * 0.15, Math.PI * 0.85);
+      g.stroke();
+      E.fillEllipse(g, cx - rad * 0.36, cy - rad * 0.44, rad * 0.34, rad * 0.2, 'rgba(255, 255, 255, 0.85)', false);
+    }
+    g.restore();
+    chipPath(g, kind, cx, cy, rad);
+    E.ink(g, inkW, uiInk(col));
+    return cv;
+  }
+  function swatch(c, r, col, sel, kind) {
+    var hot = !sel && pointerOver(c, r.x - SWATCH_PAD, r.y - SWATCH_PAD, r.w + SWATCH_PAD * 2, r.h + SWATCH_PAD * 2);
     var cx = r.x + r.w / 2, cy = r.y + r.h / 2;
-    var rad = r.w / 2 - (sel ? 1 : (hot ? 1.5 : 3));
+    var rad = r.w / 2 - (sel ? 2.5 : (hot ? 2.5 : 4));
     c.save();
-    E.softShadow(c, cx, cy + rad * 0.9, rad * 0.95, rad * 0.32, 0.3);
+    E.softShadow(c, cx, cy + rad * 0.95, rad * 0.95, rad * 0.3, 0.3);
     if (sel) {
       c.shadowColor = 'rgba(255, 196, 40, 0.8)';
       c.shadowBlur = 12;
-      E.fillEllipse(c, cx, cy, rad + 3.5, rad + 3.5, PAL.sun, false);
+      E.fillEllipse(c, cx, cy, rad + 4.5, rad + 4.5, PAL.sun, false);
       c.shadowBlur = 0;
       c.shadowColor = 'transparent';
       c.beginPath();
-      c.arc(cx, cy, rad + 3.5, 0, Math.PI * 2);
+      c.arc(cx, cy, rad + 4.5, 0, Math.PI * 2);
       E.ink(c, 1.6, '#b07a18');
     }
-    var g = c.createRadialGradient(cx - rad * 0.35, cy - rad * 0.45, rad * 0.1, cx, cy, rad);
-    g.addColorStop(0, E.mix(col, '#ffffff', 0.45));
-    g.addColorStop(0.45, col);
-    g.addColorStop(1, E.mix(col, '#2a2466', 0.32));
-    c.beginPath();
-    c.arc(cx, cy, rad, 0, Math.PI * 2);
-    c.fillStyle = g;
-    c.fill();
-    /* sky bounce along the lower edge, a hot glint up top */
-    c.save();
-    c.clip();
-    c.strokeStyle = 'rgba(206, 236, 255, 0.55)';
-    c.lineWidth = 2;
-    c.beginPath();
-    c.arc(cx, cy, rad - 1, Math.PI * 0.15, Math.PI * 0.85);
-    c.stroke();
-    c.restore();
-    E.fillEllipse(c, cx - rad * 0.36, cy - rad * 0.44, rad * 0.34, rad * 0.2, 'rgba(255, 255, 255, 0.85)', false);
-    c.beginPath();
-    c.arc(cx, cy, rad, 0, Math.PI * 2);
-    E.ink(c, sel ? 2 : 1.6, uiInk(col));
+    var half = rad * 1.25 + 3;
+    c.drawImage(chipSprite(c, kind, col, rad, sel ? 2 : 1.6), cx - half, cy - half, half * 2, half * 2);
     if (sel) {
       var tx = r.x + r.w - 3, ty = r.y + 3;
       E.fillEllipse(c, tx, ty, 8, 8, PAL.leaf);
@@ -751,6 +883,11 @@
       c.stroke();
     }
     c.restore();
+  }
+  /* How far outside its picture a colour chip still takes a tap. */
+  var SWATCH_PAD = 3;
+  function hitSwatch(r, mx, my) {
+    return mx >= r.x - SWATCH_PAD && mx <= r.x + r.w + SWATCH_PAD && my >= r.y - SWATCH_PAD && my <= r.y + r.h + SWATCH_PAD;
   }
 
   /* Screen heading over the meadow: ink letters on a cream keyline with
@@ -832,14 +969,22 @@
      ================================================================ */
 
   var CUST = {
-    previewX: 22, previewY: 58, previewW: 252, previewH: 318,
-    tabX: 290, tabY: 58, tabW: 67, tabH: 36, tabGap: 4.5,
-    gridX: 290, gridY: 104, cellW: 119, cellH: 98, cols: 4, gap: 6.3,
-    swatchX: 352, swatchY: 318, swatchSize: 36, swatchGap: 9,
+    previewX: 14, previewY: 58, previewW: 236, previewH: 314,
+    /* nine tabs span exactly the grid below: 262 .. 783 */
+    tabX: 262, tabY: 10, tabW: 54.5, tabH: 48, tabGap: 3.8,
+    gridX: 262, gridY: 66, cellW: 100, cellH: 104, cols: 5, rows: 2, gap: 5.2,
+    pagerY: 284, pagerW: 58, pagerH: 44,
+    swatchX: 264.6, swatchY: 336, swatchSize: 38, swatchStep: 43.4,
     pickerX: 24, pickerY: 398, portrait: 54, portraitGap: 12,
     done: { x: 632, y: 412, w: 152, h: 46 },
+    /* the box the tabs, cards, pager and chips are painted in */
+    controls: { x: 254, y: 2, w: 538, h: 390 },
   };
+  var CUST_PER_PAGE = CUST.cols * CUST.rows;
+  var CHIP_KIND = { hair: 'hair', outfitColor: 'cloth' };
   var customTab = 'hair';
+  var custPage = 0;
+  var shownTarget = null;
 
   function tabRect(i) {
     return { x: CUST.tabX + i * (CUST.tabW + CUST.tabGap), y: CUST.tabY, w: CUST.tabW, h: CUST.tabH };
@@ -853,16 +998,24 @@
     };
   }
   function swatchRect(i) {
-    return {
-      x: CUST.swatchX + i * (CUST.swatchSize + CUST.swatchGap),
-      y: CUST.swatchY, w: CUST.swatchSize, h: CUST.swatchSize,
-    };
+    return { x: CUST.swatchX + i * CUST.swatchStep, y: CUST.swatchY, w: CUST.swatchSize, h: CUST.swatchSize };
+  }
+  function pagerRect(dir) {
+    var right = CUST.gridX + CUST.cols * CUST.cellW + (CUST.cols - 1) * CUST.gap;
+    return { x: dir > 0 ? right - CUST.pagerW : right - CUST.pagerW * 2 - 64, y: CUST.pagerY, w: CUST.pagerW, h: CUST.pagerH };
   }
   function portraitRect(i) {
     return {
       x: CUST.pickerX + i * (CUST.portrait + CUST.portraitGap),
       y: CUST.pickerY, w: CUST.portrait, h: CUST.portrait,
     };
+  }
+  function pageCount(tab) { return Math.ceil(tab.variants.length / CUST_PER_PAGE); }
+  /* Open a tab on the page that holds what she is wearing. */
+  function showTab(id, cust) {
+    var tab = getTab(id);
+    customTab = tab.id;
+    custPage = Math.max(0, Math.floor(tab.variants.indexOf(cust[tab.field]) / CUST_PER_PAGE));
   }
 
   /* Everyone who can currently be designed: Momoko plus unlocked friends. */
@@ -925,6 +1078,8 @@
     t++;
     var target = Game.designTarget || 'momoko';
     var cust = custRecord(target);
+    /* someone new on the stage: open on the page with what they wear */
+    if (target !== shownTarget) { shownTarget = target; showTab(customTab, cust); }
     var tab = getTab(customTab);
     var roster = designRoster();
 
@@ -932,6 +1087,8 @@
     E.drawMeadowSky(c, 640, t, TITLE_GROUND, Game.MEADOW.width, null);   /* no sun: it would sit behind the tabs */
     drawTitleGround(c);
     lightBackdrop(c);
+    c.save();
+    scaleMenu(c);
     clipGame(c);
 
     /* Header */
@@ -954,7 +1111,7 @@
     E.drawMeadowDecor(c, { type: 'flowers', x: PX + PW - 38, y: pgy + 16, n: 3 }, t);
     E.drawMeadowDecor(c, { type: 'flowers', x: PX + 70, y: pgy + 30, n: 2 }, t);
     var pcx = PX + PW / 2;
-    var pcy = PY + PH - 40;
+    var pcy = PY + PH - 36;
     var spot = c.createRadialGradient(pcx, pcy - 100, 10, pcx, pcy - 100, 130);
     spot.addColorStop(0, 'rgba(255, 250, 220, 0.6)');
     spot.addColorStop(1, 'rgba(255, 250, 220, 0)');
@@ -963,7 +1120,7 @@
     stepPreviewRig();
     c.save();
     c.translate(pcx, pcy);
-    E.drawCharacter(c, 0, 0, cust, 0, 1, 3.05, false, 0, undefined, previewRig);
+    E.drawCharacter(c, 0, 0, cust, 0, 1, 3.3, false, 0, undefined, previewRig);
     c.restore();
     var bk = t / 160;
     E.drawButterfly(c, PX + PW - 60 + Math.sin(bk) * 30, PY + 70 + Math.sin(bk * 2.3) * 18, t, bk, PAL.peach);
@@ -980,26 +1137,14 @@
     fitFont(c, nm, rw - 20, 14, 'bold');
     c.fillText(nm, pcx, PY + 4);
 
-    /* Tabs */
-    for (var i = 0; i < Game.CUSTOM_TABS.length; i++) {
-      var tb = tabRect(i);
-      var isSel = Game.CUSTOM_TABS[i].id === customTab;
-      button(c, tb, T(Game.CUSTOM_TABS[i].labelKey), { active: isSel, font: 12, r: 7 });
-    }
-
-    /* Option tiles: each is a rendered crop of the character wearing it */
-    for (var v = 0; v < tab.variants.length && v < CUST.cols * 2; v++) {
-      var vid = tab.variants[v];
-      optionTile(c, cellRect(v), tab, vid, cust, cust[tab.field] === vid);
-    }
-
-    /* Colour swatches */
-    if (tab.colorField && tab.colors) {
-      sectionLabel(c, T('customColor'), CUST.gridX + 2, CUST.swatchY + CUST.swatchSize / 2);
-      for (var s = 0; s < tab.colors.length; s++) {
-        swatch(c, swatchRect(s), tab.colors[s], cust[tab.colorField] === tab.colors[s]);
-      }
-    }
+    /* Tabs, option cards, pager and colour chips, from their layer */
+    var hot = hotRect(c, 't', Game.CUSTOM_TABS.length, tabRect, 0) ||
+      hotRect(c, 'c', Math.min(CUST_PER_PAGE, tab.variants.length - custPage * CUST_PER_PAGE), cellRect, 0) ||
+      (pageCount(tab) > 1 ? hotRect(c, 'p', 2, pagerRectAt, 0) : '') ||
+      (tab.colors ? hotRect(c, 's', tab.colors.length, swatchRect, SWATCH_PAD) : '');
+    cachedLayer(c, custLayer, CUST.controls,
+      target + '|' + customTab + '|' + custPage + '|' + JSON.stringify(cust) + '|' + hot + '|' + (hot ? pointerDown() : 0),
+      paintCustControls);
 
     /* Character picker */
     if (roster.length > 1) {
@@ -1023,12 +1168,79 @@
 
     button(c, CUST.done, T(Game.flags.introSeen ? 'customDone' : 'customStart'),
       { fill: PAL.leafLight, font: 17, shine: true });
+    c.restore();
   }
 
-  /* One option card: a little sky stage with the rendered crop on it and
-     the name underneath. The chosen card glows gold, lifts and gets a
-     tick; under the pointer a card lifts a little. */
-  function optionTile(c, r, tab, vid, cust, sel) {
+  var custLayer = { cv: null, sig: '' };
+  function pagerRectAt(i) { return pagerRect(i ? 1 : -1); }
+  function paintCustControls(c) {
+    var cust = custRecord(Game.designTarget || 'momoko');
+    var tab = getTab(customTab);
+    /* Tabs: an emblem over the word */
+    for (var i = 0; i < Game.CUSTOM_TABS.length; i++) {
+      var tb = tabRect(i), tdef = Game.CUSTOM_TABS[i];
+      var isSel = tdef.id === customTab;
+      button(c, tb, '', { active: isSel, r: 9 });
+      var press = !isSel && pointerOver(c, tb.x, tb.y, tb.w, tb.h) && Game.input.pointer.down ? 2 : 0;
+      E.drawTabIcon(c, tdef.id, tb.x + tb.w / 2, tb.y + 18 + press);
+      c.fillStyle = PAL.ink;
+      fitFont(c, T(tdef.labelKey), tb.w - 6, 11, 'bold', 9);
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      c.fillText(T(tdef.labelKey), tb.x + tb.w / 2, tb.y + tb.h - 8.5 + press);
+    }
+
+    /* Option tiles, a page at a time */
+    var pages = pageCount(tab);
+    if (custPage >= pages) custPage = 0;
+    var first = custPage * CUST_PER_PAGE;
+    for (var v = first; v < tab.variants.length && v < first + CUST_PER_PAGE; v++) {
+      var vid = tab.variants[v];
+      optionTile(c, cellRect(v - first), tab, vid, cust, cust[tab.field] === vid);
+    }
+    if (pages > 1) {
+      var pl = pagerRect(-1), pr2 = pagerRect(1);
+      pagerButton(c, pl, -1);
+      pagerButton(c, pr2, 1);
+      for (var d = 0; d < pages; d++) {
+        var dx = (pl.x + pl.w + pr2.x) / 2 + (d - (pages - 1) / 2) * 16, dy = CUST.pagerY + CUST.pagerH / 2;
+        E.fillEllipse(c, dx, dy, d === custPage ? 5.5 : 4, d === custPage ? 5.5 : 4, d === custPage ? PAL.sun : 'rgba(255, 246, 228, 0.9)');
+      }
+    }
+
+    /* Colour swatches */
+    if (tab.colorField && tab.colors) {
+      sectionLabel(c, T('customColor'), CUST.gridX + 2, CUST.pagerY + CUST.pagerH - 10);
+      for (var s = 0; s < tab.colors.length; s++) {
+        swatch(c, swatchRect(s), tab.colors[s], cust[tab.colorField] === tab.colors[s], CHIP_KIND[tab.colorField]);
+      }
+    }
+  }
+
+  /* Page-turn button: a cream key with a fat arrow. */
+  function pagerButton(c, r, dir) {
+    button(c, r, '', { r: 10 });
+    var press = pointerOver(c, r.x, r.y, r.w, r.h) && Game.input.pointer.down ? 2 : 0;
+    var cx = r.x + r.w / 2, cy = r.y + r.h / 2 + press;
+    c.beginPath();
+    c.moveTo(cx + dir * 9, cy);
+    c.lineTo(cx - dir * 6, cy - 10);
+    c.lineTo(cx - dir * 6, cy + 10);
+    c.closePath();
+    c.lineJoin = 'round';
+    c.fillStyle = PAL.sun;
+    c.fill();
+    E.ink(c, 2.2);
+  }
+
+  /* An option card, shared by both designers: a raised tile with a
+     little sky stage and the option's name underneath. The chosen card
+     glows gold, lifts and gets a tick; under the pointer a card lifts a
+     little. cardBegin paints the card and leaves the context clipped to
+     the stage (returned in STAGE) for the caller's picture; cardEnd
+     finishes it. */
+  var STAGE = { x: 0, y: 0, w: 0, h: 0, lift: 0 };
+  function cardBegin(c, r, sel, hasLabel) {
     var hot = !sel && pointerOver(c, r.x, r.y, r.w, r.h);
     var lift = sel ? 2 : (hot ? 1 : 0);
     var x = r.x, y = r.y - lift, w = r.w, h = r.h;
@@ -1043,12 +1255,11 @@
       c.shadowBlur = 0;
       c.shadowColor = 'transparent';
     }
-    var base = sel ? '#ffe9a6' : (hot ? '#fffaf0' : 'rgba(255, 246, 228, 0.95)');
-    c.fillStyle = base;
+    c.fillStyle = sel ? '#ffe9a6' : (hot ? '#fffaf0' : 'rgba(255, 246, 228, 0.95)');
     tile(c, x, y, w, h, 12, sel ? 3 : 1.8, sel ? '#b07a18' : undefined);
     /* the stage */
-    var hasLabel = !!tab.labelPrefix;
     var sx = x + 6, sy = y + 6, sw = w - 12, sh = hasLabel ? h - 30 : h - 12;
+    STAGE.x = sx; STAGE.y = sy; STAGE.w = sw; STAGE.h = sh; STAGE.lift = lift;
     c.save();
     E.roundRect(c, sx, sy, sw, sh, 8);
     c.clip();
@@ -1064,26 +1275,49 @@
     rg.addColorStop(1, 'rgba(255, 252, 230, 0)');
     c.fillStyle = rg;
     c.fillRect(sx, sy, sw, sh);
-    var cu = {};
-    for (var k in cust) cu[k] = cust[k];
-    cu[tab.field] = vid;
-    E.drawPreview(c, tab.preview, sx, sy, sw, sh, cu);
+  }
+  function cardEnd(c, r, sel, label) {
+    var sx = STAGE.x, sy = STAGE.y, sw = STAGE.w, sh = STAGE.h, y = r.y - STAGE.lift;
     c.restore();
     E.roundRect(c, sx, sy, sw, sh, 8);
     c.strokeStyle = sel ? 'rgba(176, 122, 24, 0.55)' : 'rgba(74, 51, 32, 0.22)';
     c.lineWidth = 1.2;
     c.stroke();
-    /* name */
-    if (hasLabel) {
-      var label = T(tab.labelPrefix + vid);
+    if (label) {
       c.fillStyle = PAL.ink;
-      fitFont(c, label, w - 12, 12, 'bold');
+      fitFont(c, label, r.w - 10, 12, 'bold', 9);
       c.textAlign = 'center';
       c.textBaseline = 'middle';
-      c.fillText(label, x + w / 2, y + h - 12.5);
+      c.fillText(label, r.x + r.w / 2, y + r.h - 12.5);
     }
-    if (sel) tick(c, x + w - 9, y + 9);
+    if (sel) tick(c, r.x + r.w - 9, y + 9);
     c.restore();
+  }
+
+  /* A character option: her wearing it, framed on the part it changes,
+     or the thing itself. */
+  function optionTile(c, r, tab, vid, cust, sel) {
+    cardBegin(c, r, sel, !!tab.labelPrefix);
+    if (vid === 'none') {
+      /* nothing: an empty plate with a line through it */
+      var ncx = STAGE.x + STAGE.w / 2, ncy = STAGE.y + STAGE.h / 2, nr = Math.min(STAGE.w, STAGE.h) * 0.3;
+      c.lineCap = 'round';
+      c.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      c.lineWidth = 7;
+      c.beginPath();
+      c.arc(ncx, ncy, nr, 0, Math.PI * 2);
+      c.moveTo(ncx - nr * 0.7, ncy + nr * 0.7); c.lineTo(ncx + nr * 0.7, ncy - nr * 0.7);
+      c.stroke();
+      c.strokeStyle = 'rgba(124, 92, 70, 0.55)';
+      c.lineWidth = 3.4;
+      c.stroke();
+    } else {
+      var cu = {};
+      for (var k in cust) cu[k] = cust[k];
+      cu[tab.field] = vid;
+      E.drawOption(c, tab.field, STAGE.x, STAGE.y, STAGE.w, STAGE.h, cu);
+    }
+    cardEnd(c, r, sel, tab.labelPrefix ? T(tab.labelPrefix + vid) : null);
   }
 
   function tick(c, cx, cy) {
@@ -1110,19 +1344,28 @@
     var cust = custRecord(target);
     var tab = getTab(customTab);
     var i;
+    mx = menuX(mx);
+    my = menuY(my);
 
     for (i = 0; i < Game.CUSTOM_TABS.length; i++) {
-      if (hit(tabRect(i), mx, my)) { customTab = Game.CUSTOM_TABS[i].id; return 'select'; }
+      if (hit(tabRect(i), mx, my)) { showTab(Game.CUSTOM_TABS[i].id, cust); return 'select'; }
     }
-    for (i = 0; i < tab.variants.length; i++) {
-      if (hit(cellRect(i), mx, my)) {
-        if (tab.field) cust[tab.field] = tab.variants[i];
+    var first = custPage * CUST_PER_PAGE;
+    for (i = first; i < tab.variants.length && i < first + CUST_PER_PAGE; i++) {
+      if (hit(cellRect(i - first), mx, my)) {
+        cust[tab.field] = tab.variants[i];
         return 'select';
+      }
+    }
+    var pages = pageCount(tab);
+    if (pages > 1) {
+      for (i = -1; i <= 1; i += 2) {
+        if (hit(pagerRect(i), mx, my)) { custPage = (custPage + i + pages) % pages; return 'select'; }
       }
     }
     if (tab.colorField && tab.colors) {
       for (i = 0; i < tab.colors.length; i++) {
-        if (hit(swatchRect(i), mx, my)) { cust[tab.colorField] = tab.colors[i]; return 'select'; }
+        if (hitSwatch(swatchRect(i), mx, my)) { cust[tab.colorField] = tab.colors[i]; return 'select'; }
       }
     }
     var roster = designRoster();
@@ -2025,12 +2268,13 @@
      ================================================================ */
 
   var EXT = {
-    previewX: 18, previewY: 52, previewW: 316, previewH: 404,
-    /* Five tabs span exactly the grid below: 350 .. 782. */
-    tabX: 350, tabY: 58, tabW: 83.2, tabH: 36, tabGap: 4,
-    gridX: 350, gridY: 106, cellW: 212, cellH: 62, cols: 2, gap: 8,
-    swatchX: 352, swatchY: 316, swatchSize: 42, swatchGap: 12,
+    previewX: 14, previewY: 52, previewW: 316, previewH: 404,
+    /* Five tabs span exactly the grid below: 344 .. 784. */
+    tabX: 344, tabY: 10, tabW: 84.8, tabH: 44, tabGap: 4,
+    gridX: 344, gridY: 62, cellW: 142, cellH: 98, cols: 3, gap: 7,
+    swatchX: 346.6, swatchY: 300, swatchSize: 40, swatchStep: 49,
     done: { x: 636, y: 410, w: 148, h: 46 },
+    controls: { x: 336, y: 2, w: 456, h: 400 },
   };
   var extTab = 'wall';
 
@@ -2046,14 +2290,23 @@
     };
   }
   function extSwatchRect(i) {
-    return {
-      x: EXT.swatchX + i * (EXT.swatchSize + EXT.swatchGap),
-      y: EXT.swatchY, w: EXT.swatchSize, h: EXT.swatchSize,
-    };
+    return { x: EXT.swatchX + i * EXT.swatchStep, y: EXT.swatchY, w: EXT.swatchSize, h: EXT.swatchSize };
   }
   function getExtTab(id) {
     for (var i = 0; i < Game.EXT_TABS.length; i++) if (Game.EXT_TABS[i].id === id) return Game.EXT_TABS[i];
     return Game.EXT_TABS[0];
+  }
+
+  /* The look a tile shows: the house as it is, with one choice changed,
+     or wearing one decoration on its own. */
+  var tileExt = null;
+  function extWith(ext, field, value, toggle) {
+    if (!tileExt) tileExt = { decor: {} };
+    for (var k in ext) if (k !== 'decor') tileExt[k] = ext[k];
+    for (var d in ext.decor) tileExt.decor[d] = false;
+    if (toggle) tileExt.decor[toggle] = true;
+    else tileExt[field] = value;
+    return tileExt;
   }
 
   function drawExteriorScreen(c) {
@@ -2062,10 +2315,12 @@
     var tab = getExtTab(extTab);
 
     /* The same meadow as the character designer, out across the bezel
-       on tablets; the controls stay in the viewport. */
+       on tablets; the controls stay together, scaled up to fill it. */
     E.drawMeadowSky(c, 640, t, TITLE_GROUND, Game.MEADOW.width, null);   /* no sun: it would sit behind the tabs */
     drawTitleGround(c);
     lightBackdrop(c);
+    c.save();
+    scaleMenu(c);
     clipGame(c);
 
     screenTitle(c, T('extTitle'), 20, 28);
@@ -2087,153 +2342,52 @@
     sceneFrameShade(c, EXT.previewX, EXT.previewY, EXT.previewW, EXT.previewH);
     c.restore();
 
+    /* Tabs, option cards and colour chips, from their layer */
+    var hot = hotRect(c, 't', Game.EXT_TABS.length, extTabRect, 0) ||
+      hotRect(c, 'c', (tab.toggles || tab.variants).length, extCellRect, 0) ||
+      (tab.colors ? hotRect(c, 's', tab.colors.length, extSwatchRect, SWATCH_PAD) : '');
+    cachedLayer(c, extLayer, EXT.controls,
+      extTab + '|' + JSON.stringify(ext) + '|' + hot + '|' + (hot ? pointerDown() : 0), paintExtControls);
+
+    button(c, EXT.done, T('extDone'), { fill: PAL.leafLight, font: 17 });
+    c.restore();
+  }
+
+  var extLayer = { cv: null, sig: '' };
+  function paintExtControls(c) {
+    var ext = Game.exterior;
+    var tab = getExtTab(extTab);
     /* Tabs */
     for (var i = 0; i < Game.EXT_TABS.length; i++) {
       button(c, extTabRect(i), T(Game.EXT_TABS[i].labelKey),
-        { active: Game.EXT_TABS[i].id === extTab, font: 11, r: 7 });
+        { active: Game.EXT_TABS[i].id === extTab, font: 13, r: 9 });
     }
 
-    if (tab.toggles) {
-      for (var d = 0; d < tab.toggles.length; d++) {
-        var dr = extCellRect(d);
-        var on = !!ext.decor[tab.toggles[d]];
-        /* Selected = sun yellow, same as every other tile in the game. */
-        c.fillStyle = tileFill(c, dr, on, '#fffaf0', 'rgba(255,244,220,0.94)');
-        tile(c, dr.x, dr.y, dr.w, dr.h, 8, on ? 3 : 1.8);
-        /* checkbox */
-        c.fillStyle = on ? PAL.leaf : 'rgba(74,51,32,0.15)';
-        E.roundRect(c, dr.x + 12, dr.y + dr.h / 2 - 11, 22, 22, 5);
-        c.fill();
-        E.ink(c, 1.6);
-        if (on) {
-          c.strokeStyle = PAL.cream;
-          c.lineWidth = 3;
-          c.beginPath();
-          c.moveTo(dr.x + 17, dr.y + dr.h / 2);
-          c.lineTo(dr.x + 22, dr.y + dr.h / 2 + 5);
-          c.lineTo(dr.x + 29, dr.y + dr.h / 2 - 6);
-          c.stroke();
-        }
-        c.fillStyle = PAL.ink;
-        fitFont(c, T(tab.labelPrefix + tab.toggles[d]), dr.w - 54, 13, 'bold');
-        c.textAlign = 'left';
-        c.textBaseline = 'middle';
-        c.fillText(T(tab.labelPrefix + tab.toggles[d]), dr.x + 46, dr.y + dr.h / 2);
-      }
-    } else {
-      for (var v = 0; v < tab.variants.length; v++) {
-        var r = extCellRect(v);
-        var sel = ext[tab.field] === tab.variants[v];
-        c.fillStyle = tileFill(c, r, sel, '#fffaf0', 'rgba(255,244,220,0.94)');
-        tile(c, r.x, r.y, r.w, r.h, 8, sel ? 3 : 1.8);
-        drawExtIcon(c, tab.id, tab.variants[v], r.x + 34, r.y + r.h / 2, ext);
-        c.fillStyle = PAL.ink;
-        fitFont(c, T(tab.labelPrefix + tab.variants[v]), r.w - 76, 13, 'bold');
-        c.textAlign = 'left';
-        c.textBaseline = 'middle';
-        c.fillText(T(tab.labelPrefix + tab.variants[v]), r.x + 68, r.y + r.h / 2);
-      }
+    /* Option cards: each a picture of the house wearing it */
+    var list = tab.toggles || tab.variants;
+    for (var v = 0; v < list.length; v++) {
+      var r = extCellRect(v);
+      var sel = tab.toggles ? !!ext.decor[list[v]] : ext[tab.field] === list[v];
+      cardBegin(c, r, sel, true);
+      Game.tree.drawOptionTile(c, tab.id, list[v], STAGE.x, STAGE.y, STAGE.w, STAGE.h,
+        extWith(ext, tab.field, list[v], tab.toggles ? list[v] : null));
+      cardEnd(c, r, sel, T(tab.labelPrefix + list[v]));
     }
 
     if (tab.colorField && tab.colors) {
-      sectionLabel(c, T('colourLabel'), EXT.swatchX, EXT.swatchY - 16);
+      sectionLabel(c, T('colourLabel'), EXT.gridX + 2, EXT.swatchY - 13);
       for (var s = 0; s < tab.colors.length; s++) {
         swatch(c, extSwatchRect(s), tab.colors[s], ext[tab.colorField] === tab.colors[s]);
       }
     }
-
-    button(c, EXT.done, T('extDone'), { fill: PAL.leafLight, font: 17 });
-  }
-
-  function drawExtIcon(c, tabId, id, cx, cy, ext) {
-    c.save();
-    c.translate(cx, cy);
-    switch (tabId) {
-      case 'wall':
-        E.fillRound(c, -22, -16, 44, 32, 4, ext.wallColor);
-        c.save();
-        c.beginPath(); E.roundRect(c, -21, -15, 42, 30, 3); c.clip();
-        if (id === 'plank') {
-          c.strokeStyle = E.shade(ext.wallColor, -22); c.lineWidth = 1.4;
-          for (var y = -8; y < 16; y += 8) { c.beginPath(); c.moveTo(-22, y); c.lineTo(22, y); c.stroke(); }
-        } else if (id === 'log') {
-          for (var ly = -10; ly < 18; ly += 11) E.fillEllipse(c, 0, ly, 23, 5.5, E.shade(ext.wallColor, 8));
-        } else if (id === 'shingle') {
-          for (var sy = -14, row = 0; sy < 18; sy += 8, row++) {
-            for (var sx = -24 + (row % 2) * 7; sx < 24; sx += 14) {
-              E.fillEllipse(c, sx, sy, 7, 5, E.shade(ext.wallColor, row % 2 ? 6 : -6), false);
-            }
-          }
-        } else {
-          c.save(); c.globalAlpha = 0.25;
-          for (var d = 0; d < 30; d++) {
-            E.fillEllipse(c, -22 + ((d * 17) % 44), -16 + ((d * 11) % 32), 2, 2, E.shade(ext.wallColor, -40), false);
-          }
-          c.restore();
-        }
-        c.restore();
-        E.roundRect(c, -22, -16, 44, 32, 4); E.ink(c, 2);
-        break;
-      case 'roof':
-        if (id === 'gable') E.fillPath(c, [[-24, 14], [0, -14], [24, 14]], ext.roofColor);
-        else if (id === 'round') {
-          c.beginPath(); c.moveTo(-24, 14);
-          c.quadraticCurveTo(0, -24, 24, 14); c.closePath();
-          c.fillStyle = ext.roofColor; c.fill(); E.ink(c, 2);
-        } else if (id === 'thatch') {
-          c.beginPath(); c.moveTo(-24, 14);
-          c.quadraticCurveTo(-10, -12, 0, -15);
-          c.quadraticCurveTo(10, -12, 24, 14); c.closePath();
-          c.fillStyle = '#d9bb72'; c.fill(); E.ink(c, 2);
-        } else {
-          E.fillPath(c, [[-24, 14], [-16, -6], [16, -6], [24, 14]], PAL.bark);
-          E.fillPath(c, [[-20, 0], [-14, -10], [14, -10], [20, 0]], PAL.grassDark);
-          E.fillEllipse(c, -6, -10, 6, 5, PAL.leafLight, false);
-          E.fillEllipse(c, 7, -10, 6, 5, PAL.leafLight, false);
-        }
-        break;
-      case 'door':
-        var wd = 24, hd = 32;
-        if (id === 'round') {
-          c.beginPath();
-          c.moveTo(-wd / 2, 16); c.lineTo(-wd / 2, 16 - hd + wd / 2);
-          c.arc(0, 16 - hd + wd / 2, wd / 2, Math.PI, 0);
-          c.lineTo(wd / 2, 16); c.closePath();
-          c.fillStyle = '#a9773f'; c.fill(); E.ink(c, 2);
-        } else if (id === 'arched') {
-          c.beginPath();
-          c.moveTo(-wd / 2, 16); c.lineTo(-wd / 2, -6);
-          c.quadraticCurveTo(0, -22, wd / 2, -6);
-          c.lineTo(wd / 2, 16); c.closePath();
-          c.fillStyle = '#a9773f'; c.fill(); E.ink(c, 2);
-        } else if (id === 'dutch') {
-          E.fillRound(c, -wd / 2, -16, wd, 14, 3, '#a9773f');
-          E.fillRound(c, -wd / 2, 1, wd, 15, 3, E.shade('#a9773f', -12));
-        } else {
-          E.fillRound(c, -wd / 2, -16, wd, hd, 4, '#a9773f');
-          c.beginPath();
-          c.moveTo(0, -1);
-          c.bezierCurveTo(-9, -9, -5, -16, 0, -12);
-          c.bezierCurveTo(5, -16, 9, -9, 0, -1);
-          c.closePath();
-          c.fillStyle = PAL.sky; c.fill(); E.ink(c, 1.6);
-        }
-        break;
-      case 'window':
-        var s = 28;
-        if (id === 'square') { E.fillRound(c, -s / 2 - 3, -s / 2 - 3, s + 6, s + 6, 3, PAL.cream); E.fillRound(c, -s / 2, -s / 2, s, s, 2, PAL.sky); }
-        else if (id === 'round') { E.fillEllipse(c, 0, 0, s / 2 + 3, s / 2 + 3, PAL.cream); E.fillEllipse(c, 0, 0, s / 2, s / 2, PAL.sky); }
-        else if (id === 'diamond') { E.fillPath(c, [[0, -s / 2 - 3], [s / 2 + 3, 0], [0, s / 2 + 3], [-s / 2 - 3, 0]], PAL.cream); E.fillPath(c, [[0, -s / 2], [s / 2, 0], [0, s / 2], [-s / 2, 0]], PAL.sky); }
-        else { E.fillPath(c, [[-s / 2 - 5, -s / 2 - 3], [s / 2 + 5, -s / 2 - 3], [s / 2, s / 2 + 3], [-s / 2, s / 2 + 3]], PAL.cream); E.fillRound(c, -s / 2 + 1, -s / 2, s - 2, s, 2, PAL.sky); }
-        break;
-    }
-    c.restore();
   }
 
   function handleExteriorClick(mx, my) {
     var ext = Game.exterior;
     var tab = getExtTab(extTab);
     var i;
+    mx = menuX(mx);
+    my = menuY(my);
     for (i = 0; i < Game.EXT_TABS.length; i++) {
       if (hit(extTabRect(i), mx, my)) { extTab = Game.EXT_TABS[i].id; return 'select'; }
     }
@@ -2251,7 +2405,7 @@
     }
     if (tab.colorField && tab.colors) {
       for (i = 0; i < tab.colors.length; i++) {
-        if (hit(extSwatchRect(i), mx, my)) { ext[tab.colorField] = tab.colors[i]; return 'select'; }
+        if (hitSwatch(extSwatchRect(i), mx, my)) { ext[tab.colorField] = tab.colors[i]; return 'select'; }
       }
     }
     if (hit(EXT.done, mx, my)) return 'done';
@@ -3496,7 +3650,7 @@
     var sample = Game.i18n.allText();
     ['400', '700'].forEach(function (wgt) {
       document.fonts.load(wgt + ' 16px "M PLUS Rounded 1c"', sample)
-        .then(function () { E.clearSpriteCache(); Game.tree.clearCache(); })
+        .then(function () { E.clearSpriteCache(); Game.tree.clearCache(); layerEpoch++; })
         .catch(function () {});
     });
   }

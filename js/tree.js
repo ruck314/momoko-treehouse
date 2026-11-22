@@ -300,6 +300,43 @@
           }
         }
         break;
+      case 'brick':
+        var mortar = E.mix(col, '#fff4dc', 0.5);
+        c.fillStyle = mortar;
+        c.fillRect(hx, hy, hw, hh);
+        for (var by = hy + 2, br = 0; by < hy + hh; by += 11, br++) {
+          for (var bx = hx - 12 + (br % 2) * 12; bx < hx + hw; bx += 24) {
+            var bn = (br * 7 + Math.round((bx - hx) / 24) * 3) % 5;
+            c.fillStyle = E.shade(col, bn * 5 - 10);
+            E.roundRect(c, bx + 1, by, 22, 9, 2);
+            c.fill();
+            /* a lit top edge on each brick */
+            c.fillStyle = 'rgba(255, 240, 210, 0.3)';
+            c.fillRect(bx + 2.5, by + 0.8, 19, 1.4);
+            c.fillStyle = 'rgba(60, 20, 40, 0.16)';
+            c.fillRect(bx + 2.5, by + 7, 19, 1.4);
+          }
+        }
+        break;
+      case 'stone':
+        c.fillStyle = E.mix(col, '#3a2a40', 0.45);
+        c.fillRect(hx, hy, hw, hh);
+        var SW = [26, 18, 30, 22, 16, 28, 20, 24];
+        for (var sy2 = hy + 2, sr = 0; sy2 < hy + hh; sy2 += 16, sr++) {
+          var sx2 = hx - 8 - (sr % 2) * 9, si = sr * 3;
+          while (sx2 < hx + hw) {
+            var sw2 = SW[si % SW.length];
+            c.fillStyle = E.shade(col, (si * 7) % 19 - 9);
+            E.roundRect(c, sx2 + 1, sy2, sw2 - 2, 14, 6);
+            c.fill();
+            c.fillStyle = 'rgba(255, 244, 220, 0.36)';
+            E.roundRect(c, sx2 + 4, sy2 + 1.6, sw2 - 10, 3, 1.5);
+            c.fill();
+            sx2 += sw2;
+            si++;
+          }
+        }
+        break;
       case 'stucco':
         c.save();
         c.globalAlpha = 0.18;
@@ -452,6 +489,79 @@
         }
         c.restore();
         break;
+      case 'mushroom':
+        var capPath = function () {
+          c.beginPath();
+          c.moveTo(eaveL - 4, hy + 6);
+          c.bezierCurveTo(eaveL - 6, apex + 4, x - 54, apex - 26, x, apex - 26);
+          c.bezierCurveTo(x + 54, apex - 26, eaveR + 6, apex + 4, eaveR + 4, hy + 6);
+          c.closePath();
+        };
+        capPath();
+        c.fillStyle = col;
+        c.fill();
+        c.save();
+        c.clip();
+        /* cream spots, each with a shaded lower lip */
+        var SP = [[-62, -22, 15, 11], [-14, -46, 17, 12], [42, -30, 16, 12], [-96, 2, 11, 8], [88, -2, 12, 9], [-30, -6, 12, 9], [18, -4, 10, 7]];
+        for (var mi = 0; mi < SP.length; mi++) {
+          E.fillEllipse(c, x + SP[mi][0] + 1.5, hy + SP[mi][1] + 2, SP[mi][2], SP[mi][3], E.mix('#fff6e4', '#5a3a70', 0.3), false);
+          E.fillEllipse(c, x + SP[mi][0], hy + SP[mi][1], SP[mi][2], SP[mi][3], '#fff6e4', false);
+        }
+        roofLight(c, x, eaveL, eaveR, apex - 26, hy + 6, t);
+        /* gloss on the sunny shoulder */
+        c.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        c.lineWidth = 5;
+        c.lineCap = 'round';
+        c.beginPath();
+        c.moveTo(eaveL + 22, hy - 22);
+        c.quadraticCurveTo(x - 60, apex - 12, x - 22, apex - 18);
+        c.stroke();
+        c.restore();
+        capPath();
+        E.ink(c, 2.5, roofInk);
+        break;
+      case 'deck':
+        /* a flat roof terrace: boards, a railing, a flag and a parasol */
+        E.fillRound(c, eaveL, hy - 6, eaveR - eaveL, 12, 3, PAL.barkLight);
+        c.strokeStyle = E.shade(PAL.barkLight, -34);
+        c.lineWidth = 1.4;
+        for (var dk = 1; dk < 9; dk++) {
+          c.beginPath(); c.moveTo(eaveL + dk * (eaveR - eaveL) / 9, hy - 4); c.lineTo(eaveL + dk * (eaveR - eaveL) / 9, hy + 4); c.stroke();
+        }
+        for (var rl = 0; rl <= 8; rl++) {
+          E.fillRound(c, eaveL + 2 + rl * (eaveR - eaveL - 8) / 8, hy - 30, 4, 26, 2, col);
+        }
+        E.fillRound(c, eaveL - 2, hy - 34, eaveR - eaveL + 4, 7, 3, col);
+        /* parasol */
+        E.fillRound(c, x - 38, hy - 62, 3.5, 58, 1.5, PAL.cream);
+        c.beginPath();
+        c.moveTo(x - 72, hy - 58);
+        c.quadraticCurveTo(x - 36, hy - 92, x, hy - 58);
+        c.closePath();
+        c.fillStyle = col;
+        c.fill();
+        c.save();
+        c.clip();
+        c.fillStyle = PAL.cream;
+        for (var ps = 0; ps < 3; ps++) {
+          c.beginPath();
+          c.moveTo(x - 36, hy - 92);
+          c.lineTo(x - 66 + ps * 24, hy - 56);
+          c.lineTo(x - 54 + ps * 24, hy - 56);
+          c.closePath();
+          c.fill();
+        }
+        c.restore();
+        c.beginPath();
+        c.moveTo(x - 72, hy - 58);
+        c.quadraticCurveTo(x - 36, hy - 92, x, hy - 58);
+        c.closePath();
+        E.ink(c, 2.2, roofInk);
+        /* flag pole and pennant in the trim colour */
+        E.fillRound(c, x + 58, hy - 78, 3.5, 74, 1.5, PAL.bark);
+        E.fillPath(c, [[x + 61, hy - 78], [x + 90, hy - 69], [x + 61, hy - 60]], ext.trimColor);
+        break;
       case 'garden':
         E.fillPath(c, [[eaveL, hy + 4], [eaveL + 14, apex + 10], [eaveR - 14, apex + 10], [eaveR, hy + 4]], PAL.bark);
         E.fillPath(c, [[eaveL + 2, apex + 16], [eaveL + 16, apex + 4], [eaveR - 16, apex + 4], [eaveR - 2, apex + 16]], PAL.grassDark);
@@ -542,6 +652,34 @@
         E.fillRound(c, cx - w / 2, top, w, h / 2 - 2, 4, wood);
         E.fillRound(c, cx - w / 2, top + h / 2 + 2, w, h / 2 - 2, 4, E.shade(wood, -10));
         break;
+      case 'barn':
+        E.fillRound(c, cx - w / 2, top, w, h, 4, wood);
+        /* planks, a Z brace and iron strap hinges */
+        c.strokeStyle = E.shade(wood, -26);
+        c.lineWidth = 1.3;
+        for (var pk = 1; pk < 5; pk++) {
+          c.beginPath(); c.moveTo(cx - w / 2 + pk * w / 5, top + 3); c.lineTo(cx - w / 2 + pk * w / 5, bottom - 5); c.stroke();
+        }
+        E.fillPath(c, [[cx - w / 2 + 3, top + 10], [cx + w / 2 - 3, top + 10], [cx + w / 2 - 3, top + 17], [cx - w / 2 + 12, bottom - 14],
+                       [cx + w / 2 - 3, bottom - 14], [cx + w / 2 - 3, bottom - 7], [cx - w / 2 + 3, bottom - 7], [cx - w / 2 + 3, bottom - 14],
+                       [cx + w / 2 - 13, top + 17], [cx - w / 2 + 3, top + 17]], E.shade(wood, 16));
+        E.fillRound(c, cx - w / 2 - 1, top + 6, 13, 4, 2, '#5a5468');
+        E.fillRound(c, cx - w / 2 - 1, bottom - 16, 13, 4, 2, '#5a5468');
+        break;
+      case 'star':
+        E.fillRound(c, cx - w / 2, top, w, h, 5, wood);
+        c.beginPath();
+        for (var sp = 0; sp < 10; sp++) {
+          var sa = -Math.PI / 2 + sp * Math.PI / 5, srr = sp % 2 ? 5.4 : 12;
+          if (sp) c.lineTo(cx + Math.cos(sa) * srr, top + 21 + Math.sin(sa) * srr);
+          else c.moveTo(cx + Math.cos(sa) * srr, top + 21 + Math.sin(sa) * srr);
+        }
+        c.closePath();
+        c.fillStyle = PAL.sun;
+        c.fill();
+        E.ink(c, 2);
+        E.fillEllipse(c, cx - 3, top + 17, 2.4, 1.6, 'rgba(255, 255, 255, 0.8)', false);
+        break;
       case 'heart':
         E.fillRound(c, cx - w / 2, top, w, h, 5, wood);
         c.beginPath();
@@ -557,7 +695,9 @@
     }
 
     /* Panel + knob, shared by every door shape. */
-    if (ext.door !== 'heart') {
+    if (ext.door === 'star') {
+      E.fillRound(c, cx - w / 2 + 7, top + h * 0.6, w - 14, h * 0.26, 3, E.shade(wood, 14));
+    } else if (ext.door !== 'heart' && ext.door !== 'barn') {
       E.fillRound(c, cx - w / 2 + 7, top + h * 0.42, w - 14, h * 0.4, 3, E.shade(wood, 14));
       /* recessed: shade along the top and left inside edge */
       c.strokeStyle = 'rgba(60, 28, 40, 0.35)';
@@ -605,6 +745,36 @@
                        [cx + s / 2 + 1, cy + s / 2 + 3], [cx - s / 2 - 1, cy + s / 2 + 3]], frame);
         E.fillRound(c, cx - s / 2, cy - s / 2, s, s, 2, GLASS);
         break;
+      case 'heart':
+        heartPane(c, cx, cy, s / 2 + 4.5);
+        c.fillStyle = frame;
+        c.fill();
+        E.ink(c, 2);
+        heartPane(c, cx, cy, s / 2);
+        c.fillStyle = GLASS;
+        c.fill();
+        E.ink(c, 2);
+        break;
+      case 'arched':
+        archPane(c, cx, cy, s / 2 + 3.5);
+        c.fillStyle = frame;
+        c.fill();
+        E.ink(c, 2);
+        archPane(c, cx, cy, s / 2);
+        c.fillStyle = GLASS;
+        c.fill();
+        E.ink(c, 2);
+        /* shutters folded back either side, in the trim colour */
+        for (var sh = -1; sh <= 1; sh += 2) {
+          var shx = cx + sh * (s / 2 + 8.5) - 4.5;
+          E.fillRound(c, shx, cy - s / 2 + 4, 9, s - 2, 2, E.shade(ext.trimColor, -14));
+          c.strokeStyle = 'rgba(60, 28, 40, 0.4)';
+          c.lineWidth = 1.2;
+          for (var sl = 1; sl < 6; sl++) {
+            c.beginPath(); c.moveTo(shx + 2, cy - s / 2 + 4 + sl * (s - 2) / 6); c.lineTo(shx + 7, cy - s / 2 + 4 + sl * (s - 2) / 6); c.stroke();
+          }
+        }
+        break;
     }
     /* Curtains in the trim colour, gathered to each side, drawn on the
        glass before the muntins so the bars sit over them. */
@@ -616,6 +786,10 @@
     } else if (ext.windowStyle === 'diamond') {
       c.moveTo(cx, cy - s / 2); c.lineTo(cx + s / 2, cy); c.lineTo(cx, cy + s / 2); c.lineTo(cx - s / 2, cy);
       c.closePath();
+    } else if (ext.windowStyle === 'heart') {
+      heartPane(c, cx, cy, s / 2);
+    } else if (ext.windowStyle === 'arched') {
+      archPane(c, cx, cy, s / 2);
     } else {
       c.rect(cx - s / 2, cy - s / 2, s, s);
     }
@@ -639,6 +813,23 @@
     E.fillPath(c, [[cx - s / 2 + 12, cy + 1], [cx - 3, cy - s / 2 + 3], [cx + 3, cy - s / 2 + 3], [cx - s / 2 + 12, cy + 8]], '#ffffff', true, false);
     c.restore();
     E.glow(c, cx, cy + 6, s * 0.9, '255, 214, 130', 0.14);
+  }
+
+  /* Pane outlines for the shaped windows, r the half-width. */
+  function heartPane(c, cx, cy, r) {
+    c.beginPath();
+    c.moveTo(cx, cy + r * 0.98);
+    c.bezierCurveTo(cx - r * 1.5, cy - r * 0.1, cx - r * 0.9, cy - r * 1.25, cx, cy - r * 0.5);
+    c.bezierCurveTo(cx + r * 0.9, cy - r * 1.25, cx + r * 1.5, cy - r * 0.1, cx, cy + r * 0.98);
+    c.closePath();
+  }
+  function archPane(c, cx, cy, r) {
+    c.beginPath();
+    c.moveTo(cx - r, cy + r);
+    c.lineTo(cx - r, cy - r * 0.1);
+    c.arc(cx, cy - r * 0.1, r, Math.PI, 0);
+    c.lineTo(cx + r, cy + r);
+    c.closePath();
   }
 
   function layerLadder(c, a) {
@@ -670,6 +861,61 @@
     if (d.windChime && moving) decorWindChime(c, a, t);
     if (d.birdhouse && still) decorBirdhouse(c, a);
     if (d.swing && moving) decorSwing(c, a, t);
+    if (d.mailbox && still) decorMailbox(c, a, ext);
+    if (d.fairyLights && moving) decorFairyLights(c, a, t);
+  }
+
+  /* A letter box on a post at the foot of the tree, its flag up. */
+  function decorMailbox(c, a, ext) {
+    var x = a.x + 84, y = a.groundY;
+    E.softShadow(c, x + 2, y + 1, 16, 3.5, 0.3);
+    E.fillRound(c, x - 3, y - 40, 6, 41, 2, PAL.bark);
+    var bg = c.createLinearGradient(0, y - 62, 0, y - 38);
+    bg.addColorStop(0, '#f0685a');
+    bg.addColorStop(1, '#b8384a');
+    c.beginPath();
+    c.moveTo(x - 17, y - 38);
+    c.lineTo(x - 17, y - 52);
+    c.quadraticCurveTo(x - 17, y - 63, x - 6, y - 63);
+    c.lineTo(x + 17, y - 63);
+    c.lineTo(x + 17, y - 38);
+    c.closePath();
+    c.fillStyle = bg;
+    c.fill();
+    E.ink(c, 2, '#6a1a2a');
+    /* the door on the end, a letter poking out, the flag */
+    c.beginPath();
+    c.moveTo(x - 17, y - 38); c.lineTo(x - 17, y - 52); c.quadraticCurveTo(x - 17, y - 63, x - 6, y - 63);
+    c.quadraticCurveTo(x - 9, y - 50, x - 6, y - 38);
+    c.closePath();
+    c.fillStyle = 'rgba(255, 220, 200, 0.4)';
+    c.fill();
+    E.fillRound(c, x - 4, y - 58, 16, 10, 2, PAL.cream);
+    E.fillPath(c, [[x - 4, y - 58], [x + 4, y - 52], [x + 12, y - 58]], PAL.cream, false, true);
+    E.fillRound(c, x + 13, y - 76, 3, 22, 1.5, PAL.creamDark);
+    E.fillPath(c, [[x + 16, y - 76], [x + 28, y - 71.5], [x + 16, y - 67]], ext.trimColor);
+    c.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    c.fillRect(x - 2, y - 61, 16, 1.6);
+  }
+
+  /* A string of coloured bulbs looped under the deck, twinkling in turn. */
+  function decorFairyLights(c, a, t) {
+    var x0 = a.x - a.platformW / 2 + 6, x1 = a.x + a.platformW / 2 - 6, y0 = a.platformY + a.platformH + 1;
+    var cols = [PAL.sun, PAL.peach, PAL.sky, PAL.leafLight, '#c89af0'];
+    var loops = 4, w = (x1 - x0) / loops;
+    c.strokeStyle = PAL.ink;
+    c.lineWidth = 1.5;
+    c.beginPath();
+    c.moveTo(x0, y0);
+    for (var l = 0; l < loops; l++) c.quadraticCurveTo(x0 + w * (l + 0.5), y0 + 22, x0 + w * (l + 1), y0);
+    c.stroke();
+    for (var i = 0; i < loops * 3; i++) {
+      var u = (i % 3 + 0.5) / 3, lx = x0 + w * (Math.floor(i / 3) + u), ly = y0 + 22 * 2 * u * (1 - u) + 4;
+      var on = 0.55 + 0.45 * Math.sin(t / 22 + i * 1.9);
+      if (E.fxOn('glow')) E.glow(c, lx, ly + 1, 13, '255, 232, 150', 0.5 * on);
+      E.fillEllipse(c, lx, ly + 1, 3.4, 4.4, cols[i % cols.length]);
+      E.fillEllipse(c, lx - 1, ly - 0.6, 1.1, 1.4, 'rgba(255, 255, 255, ' + (0.5 + 0.4 * on).toFixed(2) + ')', false);
+    }
   }
 
   function decorBunting(c, a, t) {
@@ -832,7 +1078,7 @@
   }
   /* Bumped when the web font arrives, so the name sign repaints in it. */
   var fontEpoch = 0;
-  function clearCache() { fontEpoch++; treeSprites = []; }
+  function clearCache() { fontEpoch++; treeSprites = []; optionTiles = {}; optionTileCount = 0; }
 
   /* stageIndex = number of completed stages. ghost=true paints the next
      stage translucently so the goal is visible on the tree itself.
@@ -899,9 +1145,61 @@
     c.restore();
   }
 
+  /* Picture for a designer tile: the finished house wearing one option,
+     framed on the part it changes. Painted once per look and kept.
+     tabId: an EXT_TABS id; id: the variant or decoration. */
+  var TILE_STAGE = Game.BUILD_STAGES.length;
+  function tileCrop(tabId, id, a) {
+    switch (tabId) {
+      case 'wall': return [a.houseX + 12, a.houseTop + 64, 76, 38];
+      case 'roof': return [a.x - 118, a.houseTop - a.roofH - 50, 236, 142];
+      case 'door': return [a.doorCx - 58, a.platformY - a.doorH - 20, 116, 92];
+      case 'window': return [a.win1Cx - 46, a.winCy - 30, 92, 62];
+    }
+    switch (id) {
+      case 'flowerBox': return [a.win1Cx - 48, a.winCy - 16, 96, 60];
+      case 'lantern': return [a.houseX + a.houseW - 36, a.houseTop - 2, 92, 58];
+      case 'sign': return [a.doorCx - 56, a.houseTop - 12, 112, 68];
+      case 'bunting': return [a.x - 112, a.houseTop - 46, 224, 136];
+      case 'windChime': return [a.x + a.platformW / 2 - 62, a.platformY - 8, 96, 60];
+      case 'birdhouse': return [a.branchL.x - 68, a.branchL.y - 56, 112, 70];
+      case 'swing': return [a.branchR.x - 46, a.branchR.y - 10, 114, 86];
+      case 'mailbox': return [a.x + 26, a.groundY - 86, 142, 96];
+      case 'fairyLights': return [a.x - 96, a.platformY - 30, 192, 110];
+    }
+    return [a.x - 150, a.groundY - 330, 300, 340];
+  }
+  var optionTiles = {}, optionTileCount = 0;
+  function drawOptionTile(c, tabId, id, x, y, w, h, ext) {
+    var m = c.getTransform();
+    var res = Math.min(4, Math.ceil(Math.sqrt(m.a * m.a + m.b * m.b) * 2) / 2);
+    var key = tabId + id + w + 'x' + h + '@' + res + JSON.stringify(ext) + Game.i18n.getLang() + fontEpoch;
+    var cv = optionTiles[key];
+    if (!cv) {
+      if (optionTileCount > 60) { optionTiles = {}; optionTileCount = 0; }
+      cv = document.createElement('canvas');
+      cv.width = Math.ceil(w * res);
+      cv.height = Math.ceil(h * res);
+      var g = cv.getContext('2d');
+      var a = anchors(0, 0), R = tileCrop(tabId, id, a);
+      var s = Math.max(w / R[2], h / R[3]);
+      g.scale(res, res);
+      g.translate(w / 2 - (R[0] + R[2] / 2) * s, h / 2 - (R[1] + R[3] / 2) * s);
+      g.scale(s, s);
+      var was = part;
+      part = 0;
+      paintTree(g, a, TILE_STAGE, ext, 0, false, undefined);
+      part = was;
+      optionTiles[key] = cv;
+      optionTileCount++;
+    }
+    c.drawImage(cv, x, y, w, h);
+  }
+
   window.Game.tree = {
     drawTree: drawTree,
     drawTreePreview: drawTreePreview,
+    drawOptionTile: drawOptionTile,
     anchors: anchors,
     clearCache: clearCache,
     PAINT_ORDER: PAINT_ORDER,

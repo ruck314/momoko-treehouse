@@ -13,7 +13,7 @@
   var GAME_X = 0, GAME_Y = 0;
 
   /* Bump alongside CACHE_NAME in sw.js and tag the matching git release. */
-  Game.VERSION = 'v1.18.0';
+  Game.VERSION = 'v1.19.0';
 
   var canvas, ctx;
 
@@ -117,7 +117,7 @@
   /* A character record from any older (or newer) build: every designer
      field must be a known option and every colour a hex colour, or it
      falls back to the default. */
-  var COLOR_FIELDS = ['skin', 'hair', 'outfitColor', 'shoeColor'];
+  var COLOR_FIELDS = ['skin', 'hair', 'outfitColor', 'shoeColor', 'eyes'];
   function sanitizeCust(cu, def) {
     for (var i = 0; i < Game.CUSTOM_TABS.length; i++) {
       var tab = Game.CUSTOM_TABS[i];
